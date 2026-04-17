@@ -26,45 +26,73 @@ const OFFICER_ROLE = 'Road Infrastructure';
 const DISPATCHES = [
   {
     id: 'rd-001',
-    title: 'Pothole Collapse — NH65',
-    description: 'Large pothole near Tolichowki flyover. 3 vehicles damaged. Peak-hour traffic building.',
+    ticketId: 'TKT-7741',
+    title: 'Massive Pothole — NH65 Tolichowki',
+    description: 'Deep pothole collapse near Tolichowki flyover. 3 vehicles damaged, radiator failures reported. Peak-hour congestion building rapidly.',
     direction: 'Proceed 1.2km North on NH-65 to Tolichowki Flyover Junction',
     distance: '1.2 km',
     priority: 'HIGH',
     lat: 17.4482, lng: 78.3914,
     time: '08:30',
+    reportedBy: 'Auto-detected via 14 citizen reports',
+    reportCount: 14,
   },
   {
     id: 'rd-002',
-    title: 'Road Flooding — Sector 7',
-    description: 'Storm water overflow across Sector 7 main road. Emergency diversion needed.',
-    direction: 'Proceed 0.8km South-West to Sector 7 Junction, Banjara Hills',
+    ticketId: 'TKT-7748',
+    title: 'Flooded Intersection — Jubilee Hills',
+    description: 'Storm water overflow flooding Road No. 36 Jubilee Hills intersection. 7 vehicles stalled. Emergency diversion required — pedestrians at risk.',
+    direction: 'Proceed 0.8km South-West to Road No.36 Jubilee Hills Intersection',
     distance: '0.8 km',
     priority: 'CRITICAL',
     lat: 17.4150, lng: 78.4480,
     time: '09:15',
+    reportedBy: 'Traffic CCTV Feed + 22 citizen reports',
+    reportCount: 22,
   },
   {
     id: 'rd-003',
+    ticketId: 'TKT-7753',
     title: 'Fallen Tree — Main Boulevard',
-    description: "Large tree blocking both lanes after last night's rain. Diversion required.",
-    direction: 'Proceed 2.4km East on Main Boulevard towards Jubilee Hills',
+    description: "Large Banyan tree blocking both inbound lanes after last night's storm. Emergency saw crew needed. No injuries — road fully sealed.",
+    direction: 'Proceed 2.4km East on Main Boulevard towards Jubilee Hills Check Post',
     distance: '2.4 km',
-    priority: 'MODERATE',
+    priority: 'HIGH',
     lat: 17.4325, lng: 78.4072,
     time: '09:48',
+    reportedBy: 'Field Patrol Officer + 9 citizen reports',
+    reportCount: 9,
   },
   {
     id: 'rd-004',
-    title: 'Damaged Road Divider — Ring Road',
-    description: 'Concrete divider partially collapsed after vehicle collision. Traffic at risk.',
+    ticketId: 'TKT-7761',
+    title: 'Collapsed Road Divider — Outer Ring Rd',
+    description: 'Concrete median divider partially collapsed after truck collision near Kondapur Exit 14-B. Oncoming traffic merging dangerously. Barrier setup needed.',
     direction: 'Proceed 3.1km North on Outer Ring Road, Exit 14-B near Kondapur',
     distance: '3.1 km',
     priority: 'MODERATE',
     lat: 17.4608, lng: 78.3647,
     time: '10:20',
+    reportedBy: 'Highway Patrol Report',
+    reportCount: 6,
+  },
+  {
+    id: 'rd-005',
+    ticketId: 'TKT-7769',
+    title: 'Waterlogging — Banjara Hills Rd 12',
+    description: 'Severe waterlogging accumulating on Road 12 Banjara Hills near KBR Park Gate 2. Storm drain blocked. Residential traffic at a standstill.',
+    direction: 'Proceed 1.7km West on Road 12, Banjara Hills to KBR Park Gate 2',
+    distance: '1.7 km',
+    priority: 'CRITICAL',
+    lat: 17.4254, lng: 78.4360,
+    time: '10:55',
+    reportedBy: '31 citizen reports via Civix App',
+    reportCount: 31,
   },
 ];
+
+// Departments available for cross-dept support requests
+const DEPARTMENTS = ['Water & Sanitation', 'Electrical Grid', 'Traffic Police', 'Heavy Machinery'];
 
 // Priority colour map
 const PRI = {
@@ -88,6 +116,7 @@ export default function App() {
   // Active task — support request overlay
   const [supportOpen,   setSupportOpen]   = useState(false);
   const [supportText,   setSupportText]   = useState('');
+  const [selectedDept,  setSelectedDept]  = useState(null);  // chip selection
   const [supportSent,   setSupportSent]   = useState(false);
 
   // Verification sub-phases: 'idle' | 'camera' | 'processing' | 'success'
@@ -131,6 +160,7 @@ export default function App() {
   const submitSupport = () => {
     setSupportOpen(false);
     setSupportText('');
+    setSelectedDept(null);
     setSupportSent(true);
   };
 
@@ -477,14 +507,37 @@ export default function App() {
                 value={supportText}
                 onChangeText={setSupportText}
               />
-              {/* Department selector placeholder */}
-              <View style={s.deptSelector}>
-                <Text style={s.deptSelectorText}>SELECT DEPARTMENT  ▾</Text>
+              {/* Department chip selector */}
+              <Text style={s.chipLabel}>SELECT DEPARTMENT</Text>
+              <View style={s.chipRow}>
+                {DEPARTMENTS.map(dept => {
+                  const active = selectedDept === dept;
+                  return (
+                    <TouchableOpacity
+                      key={dept}
+                      style={[s.chip, active && s.chipActive]}
+                      onPress={() => setSelectedDept(dept)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.chipText, active && s.chipTextActive]}>{dept}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-              <TouchableOpacity style={s.submitBtn} onPress={submitSupport} activeOpacity={0.85}>
-                <Text style={s.submitBtnText}>SUBMIT REQUEST</Text>
+              {/* Submit disabled until a dept chip is selected */}
+              <TouchableOpacity
+                style={[s.submitBtn, !selectedDept && s.submitBtnDisabled]}
+                onPress={selectedDept ? submitSupport : undefined}
+                activeOpacity={selectedDept ? 0.85 : 1}
+              >
+                <Text style={s.submitBtnText}>
+                  {selectedDept ? `SUBMIT TO ${selectedDept.toUpperCase()}` : 'SELECT A DEPARTMENT FIRST'}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setSupportOpen(false)} style={{ marginTop: 12, alignItems: 'center' }}>
+              <TouchableOpacity
+                onPress={() => { setSupportOpen(false); setSelectedDept(null); }}
+                style={{ marginTop: 12, alignItems: 'center' }}
+              >
                 <Text style={{ color: T.textSecondary, fontSize: 13 }}>Cancel</Text>
               </TouchableOpacity>
             </View>
@@ -553,15 +606,27 @@ function DispatchCard({ d, onAccept }) {
   const ps = PRI[d.priority] || PRI.MODERATE;
   return (
     <View style={s.dispatchCard}>
+      {/* Top row: priority badge + ticket ID + time */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <View style={[s.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
-          <Text style={[s.priText, { color: ps.text }]}>{d.priority}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={[s.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+            <Text style={[s.priText, { color: ps.text }]}>{d.priority}</Text>
+          </View>
+          <Text style={{ fontSize: 11, color: T.textSecondary, fontWeight: '500' }}>{d.ticketId}</Text>
         </View>
         <Text style={{ fontSize: 12, color: T.textSecondary }}>{d.time}</Text>
       </View>
       <Text style={s.dispatchTitle}>{d.title}</Text>
       <Text style={s.dispatchDesc} numberOfLines={2}>{d.description}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+      {/* Reported-by row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 12 }}>
+        <Text style={{ fontSize: 11, color: T.textSecondary }}>🗣</Text>
+        <Text style={{ fontSize: 11, color: T.textSecondary, flex: 1 }} numberOfLines={1}>{d.reportedBy}</Text>
+        <View style={{ backgroundColor: '#FEF2F2', borderRadius: 12, paddingHorizontal: 7, paddingVertical: 2 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>{d.reportCount} reports</Text>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 13, fontWeight: '600', color: T.textSecondary }}>📍  {d.distance}</Text>
         <TouchableOpacity style={s.acceptBtn} onPress={onAccept} activeOpacity={0.85}>
           <Text style={s.acceptBtnText}>ACCEPT</Text>
@@ -724,8 +789,14 @@ const s = StyleSheet.create({
   supportModalTitle: { fontSize: 18, fontWeight: '800', color: T.text, marginBottom: 6 },
   supportModalSub:   { fontSize: 13, color: T.textSecondary, marginBottom: 12 },
   supportInput:      { borderWidth: 1, borderColor: T.border, borderRadius: T.radiusSM, padding: 12, fontSize: 13, color: T.text, minHeight: 90, textAlignVertical: 'top', backgroundColor: '#F9FAFB', marginBottom: 14 },
-  deptSelector:      { borderWidth: 1, borderColor: T.border, borderRadius: T.radiusSM, paddingHorizontal: 14, paddingVertical: 13, backgroundColor: '#F9FAFB', marginBottom: 16 },
-  deptSelectorText:  { fontSize: 13, color: T.textSecondary, fontWeight: '600' },
+  // Department chip selector (replaces old deptSelector placeholder)
+  chipLabel:         { fontSize: 11, fontWeight: '700', color: T.text, letterSpacing: 1.5, marginBottom: 10 },
+  chipRow:           { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
+  chip:              { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: T.border, backgroundColor: '#F9FAFB' },
+  chipActive:        { backgroundColor: T.accent, borderColor: T.accent },
+  chipText:          { fontSize: 12, fontWeight: '600', color: T.text },
+  chipTextActive:    { color: '#FFFFFF' },
   submitBtn:         { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 16, alignItems: 'center' },
-  submitBtnText:     { fontSize: 14, fontWeight: '800', color: T.white, letterSpacing: 1.5 },
+  submitBtnDisabled: { backgroundColor: '#D1D5DB' },
+  submitBtnText:     { fontSize: 13, fontWeight: '800', color: T.white, letterSpacing: 1.2 },
 });
