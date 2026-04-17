@@ -432,7 +432,7 @@ export function ExecutiveReportsView({
   }
 
   return (
-    <div className="pt-8 pb-6 space-y-8">
+    <div className="pt-8 pb-6 px-6 space-y-8">
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
