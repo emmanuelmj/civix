@@ -28,7 +28,7 @@ logger = logging.getLogger("civix-pulse.watcher")
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "civix-pulse")
 PINECONE_NAMESPACE = os.environ.get("PINECONE_NAMESPACE", "civix-events")
-POLL_INTERVAL = int(os.environ.get("PINECONE_POLL_INTERVAL", "10"))
+POLL_INTERVAL = int(os.environ.get("PINECONE_POLL_INTERVAL", "5"))
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +163,50 @@ class PineconeService:
             return matches[:top_k]
         except Exception as e:
             logger.error(f"[Pinecone] query failed: {e}")
+            return []
+
+    def update_metadata(
+        self, vector_id: str, metadata_update: dict[str, Any], namespace: str = ""
+    ) -> bool:
+        """Update metadata on an existing vector (e.g. status → PROCESSED)."""
+        if not self.is_connected:
+            return False
+        try:
+            self._index.update(
+                id=vector_id,
+                set_metadata=metadata_update,
+                namespace=namespace,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"[Pinecone] update_metadata failed for {vector_id}: {e}")
+            return False
+
+    def query_by_metadata(
+        self,
+        filter_dict: dict[str, Any],
+        top_k: int = 100,
+        namespace: str = "",
+    ) -> list[dict[str, Any]]:
+        """Query vectors by metadata filter (no vector needed — uses zero-vector)."""
+        if not self.is_connected:
+            return []
+        try:
+            # Use a zero vector to query by metadata only
+            zero_vec = [0.0] * self._dimension
+            result = self._index.query(
+                vector=zero_vec,
+                top_k=top_k,
+                include_metadata=True,
+                namespace=namespace,
+                filter=filter_dict,
+            )
+            return [
+                {"id": m.id, "score": m.score, "metadata": dict(m.metadata) if m.metadata else {}}
+                for m in result.matches
+            ]
+        except Exception as e:
+            logger.error(f"[Pinecone] query_by_metadata failed: {e}")
             return []
 
 
@@ -326,12 +370,12 @@ class PineconeWatcher:
             logger.warning("[Watcher] Pinecone not connected. Watcher disabled.")
             return
 
-        # Seed with existing IDs so we don't reprocess old events
+        # Seed with existing IDs so we don't reprocess old events on first run
         self.processed_ids = self.pc.list_all_ids(namespace=self.namespace)
         logger.info(
             f"[Watcher] Seeded with {len(self.processed_ids)} existing vectors "
             f"(namespace='{self.namespace}'). "
-            f"Polling every {self.poll_interval}s for new events…"
+            f"Polling every {self.poll_interval}s — filtering by status='NEW'…"
         )
 
         self._running = True
@@ -358,38 +402,67 @@ class PineconeWatcher:
             await asyncio.sleep(self.poll_interval)
 
     async def _poll(self) -> None:
-        """Check for new vectors in Pinecone."""
+        """
+        Check for new vectors using two strategies:
+        1. Metadata filter: query for vectors with status == "NEW"
+        2. ID-based fallback: detect new IDs not in processed_ids set
+        After processing, marks vectors as status="PROCESSED" in Pinecone.
+        """
+        new_vectors: dict[str, Any] = {}
+
+        # Strategy 1: Query by metadata status == "NEW"
+        new_by_status = self.pc.query_by_metadata(
+            filter_dict={"status": {"$eq": "NEW"}},
+            top_k=50,
+            namespace=self.namespace,
+        )
+        if new_by_status:
+            ids_from_status = [m["id"] for m in new_by_status if m["id"] not in self.processed_ids]
+            if ids_from_status:
+                fetched = self.pc.fetch_vectors(ids_from_status, namespace=self.namespace)
+                new_vectors.update(fetched)
+
+        # Strategy 2: ID-based fallback for vectors without status metadata
         current_ids = self.pc.list_all_ids(namespace=self.namespace)
         new_ids = current_ids - self.processed_ids
+        if new_ids:
+            # Only fetch IDs we haven't already fetched via strategy 1
+            unfetched = [vid for vid in new_ids if vid not in new_vectors]
+            if unfetched:
+                fetched = self.pc.fetch_vectors(unfetched[:50], namespace=self.namespace)
+                new_vectors.update(fetched)
 
-        if not new_ids:
+        if not new_vectors:
             return
 
-        logger.info(f"[Watcher] 🔔 Detected {len(new_ids)} new vector(s)")
+        logger.info(f"[Watcher] 🔔 Detected {len(new_vectors)} new vector(s)")
 
-        # Fetch metadata for new vectors (batch max 100)
-        batch = list(new_ids)[:100]
-        vectors = self.pc.fetch_vectors(batch, namespace=self.namespace)
-
-        for vid, vdata in vectors.items():
+        for vid, vdata in new_vectors.items():
             try:
                 meta = dict(vdata.metadata) if vdata.metadata else {}
                 event_data = extract_metadata(vid, meta)
-                # Attach the raw vector for cluster similarity search
                 event_data["_vector"] = (
                     list(vdata.values) if vdata.values else None
                 )
 
                 await self.process_fn(event_data)
                 self.processed_ids.add(vid)
-                logger.info(f"[Watcher] ✓ Processed: {vid}")
+
+                # Mark as PROCESSED in Pinecone so it's never picked up again
+                self.pc.update_metadata(
+                    vid, {"status": "PROCESSED"}, namespace=self.namespace
+                )
+                logger.info(f"[Watcher] ✓ Processed & marked: {vid[:30]}…")
             except Exception as e:
                 logger.error(f"[Watcher] ✗ Failed to process {vid}: {e}")
                 self.processed_ids.add(vid)  # Don't retry indefinitely
 
     def mark_processed(self, event_id: str) -> None:
-        """Manually mark an event as processed (used by webhook)."""
+        """Manually mark an event as processed (used by webhook/trigger-analysis)."""
         self.processed_ids.add(event_id)
+        self.pc.update_metadata(
+            event_id, {"status": "PROCESSED"}, namespace=self.namespace
+        )
 
     async def bootstrap(self) -> int:
         """
@@ -420,6 +493,9 @@ class PineconeWatcher:
                     )
                     await self.process_fn(event_data)
                     self.processed_ids.add(vid)
+                    self.pc.update_metadata(
+                        vid, {"status": "PROCESSED"}, namespace=self.namespace
+                    )
                     processed += 1
                     logger.info(f"[Watcher] ✓ Bootstrap processed: {vid[:20]}…")
                 except Exception as e:
