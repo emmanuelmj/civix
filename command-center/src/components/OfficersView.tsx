@@ -32,7 +32,7 @@ function relativeTime(ts: number): string {
 function DomainBadge({ domain }: { domain: PulseEvent["domain"] }) {
   return (
     <span
-      className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+      className="inline-flex items-center rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wider"
       style={{
         background: "var(--bg-surface)",
         color: "var(--fg-secondary)",
@@ -118,17 +118,17 @@ function OfficerCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => e.key === "Enter" && onClick()}
-      className="rounded-xl p-5 border cursor-pointer transition-all duration-200 hover:-translate-y-1"
+      className="rounded-xl p-6 border cursor-pointer transition-all duration-200 hover:-translate-y-1"
       style={{
         background: "var(--bg-card)",
         borderColor: "var(--border-light)",
         boxShadow: "var(--shadow-card)",
       }}
     >
-      <div className="flex items-start gap-4">
+      <div className="flex items-start gap-5">
         {/* avatar */}
         <div
-          className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
+          className="w-16 h-16 rounded-full flex items-center justify-center shrink-0 text-2xl font-bold"
           style={{
             background: "rgba(0,122,255,0.08)",
             color: "var(--accent-blue)",
@@ -141,14 +141,14 @@ function OfficerCard({
           {/* name + status */}
           <div className="flex items-center gap-2">
             <p
-              className="text-sm font-semibold truncate"
+              className="text-xl font-bold truncate"
               style={{ color: "var(--fg-primary)" }}
             >
               {officer.name || officer.officer_id}
             </p>
             <StatusDot active={isActive} />
             <span
-              className="text-[11px] font-medium"
+              className="text-sm font-medium"
               style={{
                 color: isActive
                   ? "var(--accent-blue)"
@@ -180,7 +180,7 @@ function OfficerCard({
           {/* assignments + domains */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <span
-              className="text-xs font-medium"
+              className="text-sm font-medium"
               style={{ color: "var(--fg-muted)" }}
             >
               {activeTasks} active assignment{activeTasks !== 1 ? "s" : ""}
@@ -531,12 +531,12 @@ export function OfficersView({ events }: { events: PulseEvent[] }) {
       {/* header */}
       <div className="mb-6">
         <h2
-          className="text-lg font-bold"
+          className="text-xl font-bold"
           style={{ color: "var(--fg-primary)" }}
         >
           Officers Directory
         </h2>
-        <p className="text-xs mt-1" style={{ color: "var(--fg-muted)" }}>
+        <p className="text-sm mt-1" style={{ color: "var(--fg-muted)" }}>
           {aggregates.length} personnel ·{" "}
           {aggregates.filter((a) => a.activeTasks > 0).length} dispatched
         </p>

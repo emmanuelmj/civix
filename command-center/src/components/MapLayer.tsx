@@ -334,30 +334,30 @@ export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps)
         };
         const sevColor = severityColors[props.severity] ?? "#6b7280";
         const clusterBadge = props.cluster_found === true || props.cluster_found === "true"
-          ? `<span style="background:#ede9fe;color:#7c3aed;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600;">🔗 Cluster of ${props.cluster_size ?? "N"}</span> `
+          ? `<span style="background:#ede9fe;color:#7c3aed;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;">🔗 Cluster of ${props.cluster_size ?? "N"}</span> `
           : "";
         const panicBadge = props.panic_flag === true || props.panic_flag === "true"
-          ? `<span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600;">🚨 PANIC</span> `
+          ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;">🚨 PANIC</span> `
           : "";
         const impactLine = props.sentiment_score != null
-          ? `<div style="color:#71717a;font-size:9px;margin-top:3px;">Impact score: ${Number(props.sentiment_score).toFixed(2)}</div>`
+          ? `<div style="color:#71717a;font-size:12px;margin-top:4px;">Impact score: ${Number(props.sentiment_score).toFixed(2)}</div>`
           : "";
 
-        const popup = new ml.Popup({ offset: 14, closeButton: false, maxWidth: "260px" })
+        const popup = new ml.Popup({ offset: 14, closeButton: false, maxWidth: "320px" })
           .setLngLat(coords)
           .setHTML(
-            `<div style="font-family:system-ui;font-size:12px;line-height:1.5;">
-              <div style="font-weight:600;margin-bottom:4px;color:#1c1c1e;">${props.summary}</div>
-              <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
-                <span style="background:#f4f4f5;color:#3f3f46;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:500;">${props.domain}</span>
-                <span style="background:${sevColor}15;color:${sevColor};padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600;text-transform:uppercase;">${props.severity}</span>
+            `<div style="font-family:system-ui;font-size:14px;line-height:1.6;padding:8px;">
+              <div style="font-weight:700;margin-bottom:6px;color:#1c1c1e;font-size:17px;">${props.summary}</div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+                <span style="background:#f4f4f5;color:#3f3f46;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:500;">${props.domain}</span>
+                <span style="background:${sevColor}15;color:${sevColor};padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;text-transform:uppercase;">${props.severity}</span>
                 ${clusterBadge}${panicBadge}
               </div>
-              ${props.citizen_name ? `<div style="color:#52525b;font-size:10px;">👤 ${props.citizen_name}</div>` : ""}
+              ${props.citizen_name ? `<div style="color:#52525b;font-size:13px;">👤 ${props.citizen_name}</div>` : ""}
               ${impactLine}
-              ${props.officer ? `<div style="color:#2563eb;font-size:10px;margin-top:3px;">→ ${props.officer}</div>` : ""}
-              <div style="margin-top:6px;text-align:right;">
-                <button data-view-details="${props.id}" style="background:none;border:none;color:#a855f7;font-size:10px;font-weight:600;cursor:pointer;padding:2px 0;">View Details →</button>
+              ${props.officer ? `<div style="color:#2563eb;font-size:13px;margin-top:4px;">→ ${props.officer}</div>` : ""}
+              <div style="margin-top:10px;text-align:right;">
+                <button data-view-details="${props.id}" style="background:#007AFF;border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;padding:6px 16px;border-radius:8px;">View Details →</button>
               </div>
             </div>`
           )
