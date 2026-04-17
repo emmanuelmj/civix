@@ -1,64 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { MapLayer } from "@/components/MapLayer";
 import { IngestionFeed } from "@/components/IngestionFeed";
 import { SwarmLog } from "@/components/SwarmLog";
-import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "@/lib/types";
-import { generatePulseEvent, generateSwarmLog, generateIntakeItem } from "@/lib/mock-data";
-
-const MAX_ITEMS = 50;
+import { usePulseStream } from "@/lib/socket";
 
 export default function DashboardPage() {
-  const [events, setEvents] = useState<PulseEvent[]>([]);
-  const [logs, setLogs] = useState<SwarmLogEntry[]>([]);
-  const [intake, setIntake] = useState<IntakeFeedItem[]>([]);
+  const { events, logs, intake, status } = usePulseStream();
   const [stats, setStats] = useState({ active: 0, critical: 0, resolved: 0, avgTime: "—" });
   const [mobileTab, setMobileTab] = useState<"map" | "intake" | "swarm">("map");
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    const seed = Array.from({ length: 6 }, () => generatePulseEvent());
-    const seedLogs = seed.flatMap(e => [generateSwarmLog(e), generateSwarmLog(e)]);
-    const seedIntake = Array.from({ length: 4 }, () => generateIntakeItem());
-    setEvents(seed);
-    setLogs(seedLogs);
-    setIntake(seedIntake);
-
-    intervalRef.current = setInterval(() => {
-      const roll = Math.random();
-
-      if (roll < 0.4) {
-        const evt = generatePulseEvent();
-        setEvents(prev => [evt, ...prev].slice(0, MAX_ITEMS));
-        setLogs(prev => [generateSwarmLog(evt), ...prev].slice(0, MAX_ITEMS));
-      } else if (roll < 0.7) {
-        setIntake(prev => [generateIntakeItem(), ...prev].slice(0, MAX_ITEMS));
-      } else {
-        setLogs(prev => [generateSwarmLog(), ...prev].slice(0, MAX_ITEMS));
-      }
-
-      if (Math.random() < 0.1) {
-        setEvents(prev => {
-          const copy = [...prev];
-          const unresolvedIdx = copy.findIndex(e => e.status !== "RESOLVED");
-          if (unresolvedIdx >= 0) {
-            copy[unresolvedIdx] = { ...copy[unresolvedIdx], status: "RESOLVED" };
-            setLogs(p => [{
-              id: `res-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-              type: "verification" as const,
-              message: `Task closed. ${copy[unresolvedIdx].summary} — resolved.`,
-              timestamp: Date.now(),
-              event_id: copy[unresolvedIdx].event_id,
-            }, ...p].slice(0, MAX_ITEMS));
-          }
-          return copy;
-        });
-      }
-    }, 2500);
-
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, []);
 
   useEffect(() => {
     const active = events.filter(e => e.status !== "RESOLVED").length;
@@ -110,6 +61,13 @@ export default function DashboardPage() {
           <StatPill label="Resolved" value={stats.resolved} color="var(--accent-green)" />
           <StatPill label="Avg Response" value={stats.avgTime} color="var(--fg-secondary)" />
           <div className="ml-auto flex items-center gap-2">
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+              style={{
+                background: status === "connected" ? "var(--accent-green-dim)" : "var(--accent-amber-dim)",
+                color: status === "connected" ? "var(--accent-green)" : "var(--accent-amber)",
+              }}>
+              {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : "◉ DEMO"}
+            </span>
             {(["Municipal", "Traffic", "Construction", "Emergency"] as const).map(d => {
               const count = events.filter(e => e.domain === d && e.status !== "RESOLVED").length;
               return (
