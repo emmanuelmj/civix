@@ -14,7 +14,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from swarm.graph import compile_graph, PulseState
+try:
+    # When run as `python -m uvicorn backend.main:app` from repo root
+    from backend.swarm.graph import compile_graph, PulseState
+except ImportError:
+    # When run as `uvicorn main:app` from backend/
+    from swarm.graph import compile_graph, PulseState
 
 # ---------------------------------------------------------------------------
 # Logging

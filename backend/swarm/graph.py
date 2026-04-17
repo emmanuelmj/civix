@@ -27,8 +27,11 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 load_dotenv()
 
-# LangSmith tracing — reads from .env automatically
-os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+# LangSmith tracing — disable by default if no key is set
+if not os.environ.get("LANGCHAIN_API_KEY"):
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+else:
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "civix-pulse")
 
 logger = logging.getLogger("civix-pulse.swarm")
