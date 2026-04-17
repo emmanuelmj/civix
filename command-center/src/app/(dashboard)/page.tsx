@@ -82,8 +82,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-0 relative">
       {/* Mobile tab bar */}
-      <div className="flex lg:hidden border-b shrink-0 glass"
-        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+      <div className="flex lg:hidden border-b shrink-0 glass">
         {(["map", "intake", "swarm"] as const).map(tab => (
           <button key={tab} onClick={() => setMobileTab(tab)}
             className="flex-1 py-2.5 text-[10px] font-bold font-mono uppercase tracking-[0.15em] text-center transition-all duration-300 border-b-2"
@@ -98,24 +97,22 @@ export default function DashboardPage() {
       </div>
 
       {/* Mobile stats bar */}
-      <div className="flex lg:hidden items-center gap-3 px-3 py-1.5 border-b overflow-x-auto shrink-0 glass"
-        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+      <div className="flex lg:hidden items-center gap-3 px-3 py-1.5 border-b overflow-x-auto shrink-0 glass">
         <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
         <StatPill label="Crit" value={stats.critical} color="var(--accent-crimson)" />
         <StatPill label="Done" value={stats.resolved} color="var(--accent-green)" />
       </div>
 
-      {/* Left: Ingestion Feed — desktop only */}
-      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-r flex-col overflow-hidden glass"
-        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+      {/* Left: Ingestion Feed — paper sidebar */}
+      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-r flex-col overflow-hidden"
+        style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
         <IngestionFeed items={intake} />
       </div>
 
       {/* Center: Map + Stats — desktop */}
       <div className="hidden lg:flex flex-[2] flex-col min-w-0 min-h-0 h-full overflow-hidden">
-        {/* Stats bar */}
-        <div className="flex items-center gap-4 px-4 py-2.5 border-b shrink-0 glass"
-          style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+        {/* Stats bar — frosted glass over map */}
+        <div className="flex items-center gap-4 px-4 py-2.5 border-b shrink-0 glass">
           {/* Stats group — always visible */}
           <div className="flex items-center gap-5 shrink-0">
             <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
@@ -130,32 +127,32 @@ export default function DashboardPage() {
             <button
               onClick={handleTrigger}
               disabled={triggering}
-              className="px-4 py-2 rounded-md text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
+              className="px-4 py-2 rounded-lg text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
               style={{
-                background: triggering ? "var(--bg-elevated)" : "var(--accent-blue)",
+                background: triggering ? "var(--bg-surface)" : "var(--accent-blue)",
                 color: triggering ? "var(--fg-muted)" : "#fff",
-                boxShadow: triggering ? "none" : "0 0 15px rgba(37,99,235,0.35)",
+                boxShadow: triggering ? "none" : "0 0 15px rgba(0,122,255,0.3)",
               }}
             >
               {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
             </button>
             {triggerMsg && (
-              <span className="text-xs font-mono px-2.5 py-1 rounded animate-pulse"
+              <span className="text-xs font-mono px-2.5 py-1 rounded-lg animate-pulse"
                 style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>
                 {triggerMsg}
               </span>
             )}
-            <span className="text-xs font-mono px-2 py-1 rounded"
+            <span className="text-xs font-mono px-2 py-1 rounded-lg"
               style={{
-                background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "rgba(220,38,38,0.1)" : "var(--accent-amber-dim)",
-                color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "#dc2626" : "var(--accent-amber)",
+                background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "var(--accent-crimson-dim)" : "var(--accent-amber-dim)",
+                color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "var(--accent-crimson)" : "var(--accent-amber)",
               }}>
               {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : status === "disconnected" ? "✕ OFFLINE" : "↻ RECONNECTING"}
             </span>
           </div>
         </div>
         {/* Smart Filter Bar */}
-        <div className="shrink-0 border-b glass" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+        <div className="shrink-0 border-b glass">
           <FilterBar events={activeEvents} onFilterChange={setFilteredEvents} />
         </div>
         {/* Map — fluid fill */}
@@ -164,9 +161,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Right: Swarm Log — desktop only */}
-      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-l flex-col overflow-hidden glass"
-        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+      {/* Right: Swarm Log — paper sidebar */}
+      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-l flex-col overflow-hidden"
+        style={{ background: "var(--bg-card)", borderColor: "var(--border)" }}>
         <SwarmLog entries={logs} />
       </div>
 
@@ -200,9 +197,9 @@ export default function DashboardPage() {
 function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
     <div className="flex items-center gap-2 shrink-0">
-      <span className="w-2 h-2 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
-      <span className="text-[10px] font-bold font-mono uppercase tracking-[0.15em]" style={{ color: "var(--fg-muted)" }}>{label}</span>
-      <span className="text-lg font-medium tracking-tight tabular-nums" style={{ color }}>{value}</span>
+      <span className="w-2 h-2 rounded-full" style={{ background: color, boxShadow: `0 0 6px ${color}` }} />
+      <span className="text-[10px] font-semibold font-mono uppercase tracking-[0.15em]" style={{ color: "var(--fg-muted)" }}>{label}</span>
+      <span className="text-lg font-medium tracking-tight tabular-nums" style={{ color: "var(--fg-primary)" }}>{value}</span>
     </div>
   );
 }

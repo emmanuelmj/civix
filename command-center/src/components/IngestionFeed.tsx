@@ -57,8 +57,8 @@ export function IngestionFeed({ items }: IngestionFeedProps) {
             item.translated_text?.toLowerCase().includes("emergency");
           return (
             <div key={item.id}
-              className={`feed-card p-3.5 rounded-lg border break-words transition-all duration-300 hover:-translate-y-0.5 hover:brightness-[1.02] cursor-pointer ${isCritical ? "glow-critical" : ""}`}
-              style={{ background: "var(--bg-elevated)", borderColor: isCritical ? "rgba(220,38,38,0.35)" : "var(--border)" }}>
+              className={`feed-card p-3.5 rounded-xl break-words transition-all duration-300 hover:-translate-y-0.5 cursor-pointer paper-card ${isCritical ? "glow-critical" : ""}`}
+              style={isCritical ? { borderColor: "rgba(239,68,68,0.3)" } : undefined}>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm">{CHANNEL_ICONS[item.channel]}</span>
                 <span className="text-[10px] font-mono uppercase font-bold tracking-[0.15em]"

@@ -14,8 +14,13 @@ export function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
 
   return (
     <header
-      className="glass h-12 flex items-center justify-between px-5 border-b shrink-0"
-      style={{ borderColor: "rgba(0,0,0,0.06)" }}
+      className="h-12 flex items-center justify-between px-5 border-b shrink-0"
+      style={{
+        background: "rgba(255,255,255,0.80)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        borderColor: "var(--border)",
+      }}
     >
       <div className="flex items-center gap-3">
         {/* Mobile menu button */}

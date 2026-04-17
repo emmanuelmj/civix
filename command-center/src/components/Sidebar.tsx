@@ -28,7 +28,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   return (
     <aside
       className="fixed left-0 top-0 bottom-0 w-52 flex flex-col border-r z-30"
-      style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}
+      style={{ background: "var(--bg-card)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}
     >
       {/* Logo */}
       <div className="px-4 py-4 border-b" style={{ borderColor: "var(--border-light)" }}>

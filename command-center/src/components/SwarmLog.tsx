@@ -38,8 +38,8 @@ export function SwarmLog({ entries }: SwarmLogProps) {
           const isEscalation = entry.type === "escalation";
           return (
             <div key={entry.id}
-              className={`feed-card px-3.5 py-3 rounded-lg break-words transition-all duration-300 hover:-translate-y-0.5 hover:brightness-[1.02] cursor-pointer ${isEscalation ? "glow-critical" : ""}`}
-              style={{ background: "var(--bg-elevated)", borderColor: isEscalation ? "rgba(220,38,38,0.35)" : "transparent", border: isEscalation ? "1px solid rgba(220,38,38,0.35)" : "none" }}>
+              className={`feed-card px-3.5 py-3 rounded-xl break-words transition-all duration-300 hover:-translate-y-0.5 cursor-pointer paper-card ${isEscalation ? "glow-critical" : ""}`}
+              style={isEscalation ? { borderColor: "rgba(239,68,68,0.3)" } : undefined}>
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
                   style={{ background: `${style.color}22`, color: style.color }}>

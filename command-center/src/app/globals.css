@@ -1,35 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  /* Backgrounds — warm off-white, layered depth */
-  --bg-base: #f0ede8;
-  --bg-surface: #e8e4de;
-  --bg-card: #faf8f5;
-  --bg-elevated: #ffffff;
+  /* 1. Canvas & Paper — cool off-white canvas, pure white paper */
+  --bg-base: #F9F9FB;          /* Canvas — soft cool gray background */
+  --bg-surface: #F3F4F6;       /* Recessed areas, inputs */
+  --bg-card: #ffffff;           /* Paper — sidebars, cards, nav */
+  --bg-elevated: #ffffff;       /* Elevated cards (same as paper) */
 
-  /* Text — warm charcoal, not pure black */
-  --fg-primary: #1e1e1e;
-  --fg-secondary: #5c5856;
-  --fg-muted: #9a948d;
+  /* 3. Ink & Slate typography — never pure black */
+  --fg-primary: #1e293b;       /* slate-800 — headers, data */
+  --fg-secondary: #64748b;     /* slate-500 — body, descriptions */
+  --fg-muted: #94a3b8;         /* slate-400 — micro-labels, timestamps */
 
-  /* Accents — same meaningful system */
-  --accent-blue: #2563eb;
-  --accent-blue-dim: #dbeafe;
-  --accent-crimson: #dc2626;
-  --accent-crimson-dim: #fee2e2;
-  --accent-green: #16a34a;
-  --accent-green-dim: #dcfce7;
-  --accent-amber: #ca8a04;
-  --accent-amber-dim: #fef9c3;
+  /* 4. Saturated candy accents — high-contrast on white */
+  --accent-blue: #007AFF;      /* iOS system blue */
+  --accent-blue-dim: #EFF6FF;  /* blue-50 tint */
+  --accent-crimson: #EF4444;   /* red-500 — piercing clean red */
+  --accent-crimson-dim: #FEF2F2; /* red-50 */
+  --accent-green: #22C55E;     /* green-500 — vibrant */
+  --accent-green-dim: #F0FDF4; /* green-50 */
+  --accent-amber: #F59E0B;     /* amber-500 */
+  --accent-amber-dim: #FFFBEB; /* amber-50 */
 
-  /* Borders — subtle warmth */
-  --border: #d6d1ca;
-  --border-light: #e2ddd6;
+  /* 2. Feather-light borders — barely there */
+  --border: #E5E7EB;           /* gray-200 */
+  --border-light: #F3F4F6;     /* gray-100 */
 
-  /* Glow effects — soft colored shadows */
-  --glow-blue: 0 0 12px rgba(37, 99, 235, 0.15);
-  --glow-crimson: 0 0 12px rgba(220, 38, 38, 0.15);
-  --glow-green: 0 0 12px rgba(22, 163, 74, 0.15);
+  /* Glow effects — saturated candy shadows */
+  --glow-blue: 0 0 12px rgba(0, 122, 255, 0.15);
+  --glow-crimson: 0 0 12px rgba(239, 68, 68, 0.2);
+  --glow-green: 0 0 12px rgba(34, 197, 94, 0.15);
+
+  /* Feather shadow — ambient paper float */
+  --shadow-card: 0 8px 30px rgb(0 0 0 / 0.04);
+  --shadow-dropdown: 0 12px 40px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.03);
 }
 
 @theme inline {
@@ -54,9 +58,9 @@ body {
 /* MapLibre GL popup override */
 .maplibregl-popup-content {
   background: var(--bg-card) !important;
-  border: 1px solid var(--border);
-  border-radius: 8px !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--shadow-card) !important;
   padding: 10px 12px !important;
 }
 .maplibregl-popup-tip { border-top-color: var(--bg-card) !important; }
@@ -96,20 +100,27 @@ body {
   scrollbar-width: none;
 }
 
-/* Glassmorphism base — reusable frosted-glass panel */
+/* 5. Cupertino glassmorphism — frosted white over map */
 .glass {
-  background: rgba(250, 248, 245, 0.72);
+  background: rgba(255, 255, 255, 0.80);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-color: rgba(0, 0, 0, 0.06);
+  border-color: var(--border);
 }
 
 /* Neon glow keyframes for critical cards */
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.15); }
-  50% { box-shadow: 0 0 20px rgba(220, 38, 38, 0.35); }
+  0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.12); }
+  50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
 }
 .glow-critical {
   animation: glow-pulse 2s ease-in-out infinite;
-  border-color: rgba(220, 38, 38, 0.35);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Paper card — subtle float above canvas */
+.paper-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
 }
