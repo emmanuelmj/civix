@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { io, Socket } from "socket.io-client";
 import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "./types";
 import { generatePulseEvent, generateSwarmLog, generateIntakeItem } from "./mock-data";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/dashboard";
 const MAX_ITEMS = 50;
+const RECONNECT_BASE_DELAY = 1000;
+const RECONNECT_MAX_DELAY = 8000;
+const RECONNECT_MAX_ATTEMPTS = 5;
+const CONNECT_TIMEOUT = 3000;
 
-// Map backend pulse_update payload → our PulseEvent
+// ── Backend payload mappers ────────────────────────────────────────
+
 function mapBackendEvent(raw: Record<string, unknown>): PulseEvent {
   const coords = raw.coordinates as { lat: number; lng: number } | undefined;
   const officer = raw.assigned_officer as {
@@ -63,7 +67,9 @@ function mapBackendLog(raw: Record<string, unknown>): SwarmLogEntry {
   };
 }
 
-export type ConnectionStatus = "connecting" | "connected" | "mock";
+// ── Types ──────────────────────────────────────────────────────────
+
+export type ConnectionStatus = "connecting" | "connected" | "reconnecting" | "mock";
 
 interface UsePulseStreamReturn {
   events: PulseEvent[];
@@ -72,19 +78,34 @@ interface UsePulseStreamReturn {
   status: ConnectionStatus;
 }
 
+// ── WebSocket message protocol ─────────────────────────────────────
+// Backend sends JSON with { type: "pulse_update" | "intake_update" | "swarm_log" | "event_status", data: {...} }
+
+interface WSMessage {
+  type: "pulse_update" | "intake_update" | "swarm_log" | "event_status";
+  data: Record<string, unknown>;
+}
+
+// ── Hook ───────────────────────────────────────────────────────────
+
 export function usePulseStream(): UsePulseStreamReturn {
   const [events, setEvents] = useState<PulseEvent[]>([]);
   const [logs, setLogs] = useState<SwarmLogEntry[]>([]);
   const [intake, setIntake] = useState<IntakeFeedItem[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
-  const socketRef = useRef<Socket | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
   const mockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  // ── Mock data fallback ─────────────────────────────────────────
 
   const startMockMode = useCallback(() => {
-    if (mockIntervalRef.current) return; // already running
+    if (mockIntervalRef.current) return;
     setStatus("mock");
 
-    // Seed
     const seed = Array.from({ length: 6 }, () => generatePulseEvent());
     const seedLogs = seed.flatMap((e) => [generateSwarmLog(e), generateSwarmLog(e)]);
     const seedIntake = Array.from({ length: 4 }, () => generateIntakeItem());
@@ -92,7 +113,6 @@ export function usePulseStream(): UsePulseStreamReturn {
     setLogs(seedLogs);
     setIntake(seedIntake);
 
-    // Stream mock data
     mockIntervalRef.current = setInterval(() => {
       const roll = Math.random();
       if (roll < 0.4) {
@@ -105,7 +125,6 @@ export function usePulseStream(): UsePulseStreamReturn {
         setLogs((prev) => [generateSwarmLog(), ...prev].slice(0, MAX_ITEMS));
       }
 
-      // Occasional resolution
       if (Math.random() < 0.1) {
         setEvents((prev) => {
           const copy = [...prev];
@@ -136,82 +155,136 @@ export function usePulseStream(): UsePulseStreamReturn {
     }
   }, []);
 
-  useEffect(() => {
-    setStatus("connecting");
+  // ── Message handler ────────────────────────────────────────────
 
-    const socket = io(BACKEND_URL, {
-      transports: ["websocket", "polling"],
-      timeout: 4000,
-      reconnectionAttempts: 2,
-      reconnectionDelay: 1000,
-    });
+  const handleMessage = useCallback((msg: WSMessage) => {
+    switch (msg.type) {
+      case "pulse_update": {
+        const evt = mapBackendEvent(msg.data);
+        setEvents((prev) => [evt, ...prev].slice(0, MAX_ITEMS));
+        if (evt.log_message) {
+          const logType: SwarmLogEntry["type"] =
+            evt.status === "DISPATCHED" ? "dispatch" : evt.status === "RESOLVED" ? "verification" : "analysis";
+          setLogs((prev) => [
+            {
+              id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+              type: logType,
+              message: evt.log_message,
+              timestamp: evt.timestamp,
+              event_id: evt.event_id,
+            },
+            ...prev,
+          ].slice(0, MAX_ITEMS));
+        }
+        break;
+      }
+      case "intake_update":
+        setIntake((prev) => [mapBackendIntake(msg.data), ...prev].slice(0, MAX_ITEMS));
+        break;
+      case "swarm_log":
+        setLogs((prev) => [mapBackendLog(msg.data), ...prev].slice(0, MAX_ITEMS));
+        break;
+      case "event_status": {
+        const { event_id, status: newStatus } = msg.data as { event_id: string; status: PulseEvent["status"] };
+        setEvents((prev) =>
+          prev.map((e) => (e.event_id === event_id ? { ...e, status: newStatus } : e))
+        );
+        break;
+      }
+    }
+  }, []);
 
-    socketRef.current = socket;
+  // ── WebSocket connect with exponential backoff ─────────────────
 
-    socket.on("connect", () => {
+  const connect = useCallback(() => {
+    if (!mountedRef.current) return;
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+
+    const isReconnect = reconnectAttemptRef.current > 0;
+    setStatus(isReconnect ? "reconnecting" : "connecting");
+
+    let didOpen = false;
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    const connectTimeout = setTimeout(() => {
+      if (!didOpen) {
+        ws.close();
+      }
+    }, CONNECT_TIMEOUT);
+
+    ws.onopen = () => {
+      didOpen = true;
+      clearTimeout(connectTimeout);
+      if (!mountedRef.current) { ws.close(); return; }
+      reconnectAttemptRef.current = 0;
       stopMock();
       setStatus("connected");
-    });
+      // Clear old data when switching from mock to live
+      setEvents([]);
+      setLogs([]);
+      setIntake([]);
+    };
 
-    // Primary event stream from backend
-    socket.on("pulse_update", (data: Record<string, unknown>) => {
-      const evt = mapBackendEvent(data);
-      setEvents((prev) => [evt, ...prev].slice(0, MAX_ITEMS));
-
-      // Auto-generate swarm log from backend event
-      if (evt.log_message) {
-        const logType: SwarmLogEntry["type"] =
-          evt.status === "DISPATCHED" ? "dispatch" : evt.status === "RESOLVED" ? "verification" : "analysis";
-        setLogs((prev) => [
-          {
-            id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-            type: logType,
-            message: evt.log_message,
-            timestamp: evt.timestamp,
-            event_id: evt.event_id,
-          },
-          ...prev,
-        ].slice(0, MAX_ITEMS));
+    ws.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data) as WSMessage;
+        if (parsed.type && parsed.data) {
+          handleMessage(parsed);
+        }
+      } catch {
+        // Ignore malformed messages
       }
-    });
+    };
 
-    // Optional: separate intake feed from backend
-    socket.on("intake_update", (data: Record<string, unknown>) => {
-      setIntake((prev) => [mapBackendIntake(data), ...prev].slice(0, MAX_ITEMS));
-    });
+    ws.onclose = () => {
+      clearTimeout(connectTimeout);
+      wsRef.current = null;
+      if (!mountedRef.current) return;
 
-    // Optional: separate swarm log from backend
-    socket.on("swarm_log", (data: Record<string, unknown>) => {
-      setLogs((prev) => [mapBackendLog(data), ...prev].slice(0, MAX_ITEMS));
-    });
+      if (reconnectAttemptRef.current < RECONNECT_MAX_ATTEMPTS) {
+        const delay = Math.min(
+          RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
+          RECONNECT_MAX_DELAY
+        );
+        reconnectAttemptRef.current++;
+        setStatus("reconnecting");
+        reconnectTimerRef.current = setTimeout(connect, delay);
+      } else {
+        startMockMode();
+      }
+    };
 
-    // Optional: event status update (e.g., resolution)
-    socket.on("event_status", (data: { event_id: string; status: PulseEvent["status"] }) => {
-      setEvents((prev) =>
-        prev.map((e) => (e.event_id === data.event_id ? { ...e, status: data.status } : e))
-      );
-    });
+    ws.onerror = () => {
+      // onclose will fire after onerror — reconnect logic handled there
+    };
+  }, [handleMessage, startMockMode, stopMock]);
 
-    socket.on("connect_error", () => {
-      startMockMode();
-    });
+  // ── Lifecycle ──────────────────────────────────────────────────
 
-    socket.on("disconnect", () => {
-      startMockMode();
-    });
+  useEffect(() => {
+    mountedRef.current = true;
+    connect();
 
-    // If no connection within 3s, fall back to mock
-    const fallbackTimer = setTimeout(() => {
-      if (!socket.connected) startMockMode();
-    }, 3000);
+    // Fallback: if still not connected after timeout, start mock
+    const fallback = setTimeout(() => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        startMockMode();
+      }
+    }, CONNECT_TIMEOUT + 500);
 
     return () => {
-      clearTimeout(fallbackTimer);
+      mountedRef.current = false;
+      clearTimeout(fallback);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       stopMock();
-      socket.disconnect();
-      socketRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // prevent reconnect on intentional close
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [startMockMode, stopMock]);
+  }, [connect, startMockMode, stopMock]);
 
   return { events, logs, intake, status };
 }
