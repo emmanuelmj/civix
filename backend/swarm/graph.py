@@ -83,8 +83,22 @@ def _get_pinecone_index():
     if not PINECONE_API_KEY or PINECONE_API_KEY == "...":
         return None
     try:
-        from pinecone import Pinecone
+        from pinecone import Pinecone, ServerlessSpec
+
         pc = Pinecone(api_key=PINECONE_API_KEY)
+
+        # Auto-create index if it doesn't exist
+        existing = [idx.name for idx in pc.list_indexes()]
+        if PINECONE_INDEX_NAME not in existing:
+            logger.info(f"[Auditor] Creating Pinecone index '{PINECONE_INDEX_NAME}'...")
+            pc.create_index(
+                name=PINECONE_INDEX_NAME,
+                dimension=1536,
+                metric="cosine",
+                spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+            )
+            logger.info(f"[Auditor] Index '{PINECONE_INDEX_NAME}' created.")
+
         return pc.Index(PINECONE_INDEX_NAME)
     except Exception as e:
         logger.warning(f"[Auditor] Pinecone init failed: {e}")
@@ -114,41 +128,41 @@ async def systemic_auditor_node(state: PulseState) -> dict:
     try:
         # Fetch this event's vector from Pinecone (stored by Dev 2's ingestion pipeline)
         fetch_result = index.fetch(ids=[state["event_id"]])
-        vectors = fetch_result.get("vectors", {})
 
-        if state["event_id"] not in vectors:
+        if state["event_id"] not in fetch_result.vectors:
             logger.warning(
                 f"[Auditor] Event {state['event_id']} not found in Pinecone. "
                 f"Dev 2 may not have indexed it yet. Using mock."
             )
             return _mock_cluster_check()
 
-        event_vector = vectors[state["event_id"]]["values"]
+        event_vector = fetch_result.vectors[state["event_id"]].values
 
         # Query for similar events (potential cluster members)
         query_result = index.query(
             vector=event_vector,
             top_k=5,
             include_metadata=True,
-            filter={
-                "event_id": {"$ne": state["event_id"]},
-            },
         )
 
-        matches = query_result.get("matches", [])
-        if matches and matches[0]["score"] >= CLUSTER_SIMILARITY_THRESHOLD:
-            top_match = matches[0]
+        # Filter out self-match and check similarity
+        matches = [
+            m for m in query_result.matches
+            if m.id != state["event_id"]
+        ]
+
+        if matches and matches[0].score >= CLUSTER_SIMILARITY_THRESHOLD:
             cluster_size = sum(
-                1 for m in matches if m["score"] >= CLUSTER_SIMILARITY_THRESHOLD
+                1 for m in matches if m.score >= CLUSTER_SIMILARITY_THRESHOLD
             )
             logger.info(
-                f"[Auditor] CLUSTER DETECTED — top similarity: {top_match['score']:.3f}, "
+                f"[Auditor] CLUSTER DETECTED — top similarity: {matches[0].score:.3f}, "
                 f"cluster size: {cluster_size}, "
-                f"master event: {top_match['id']}"
+                f"master event: {matches[0].id}"
             )
             return {"cluster_found": True}
         else:
-            top_score = matches[0]["score"] if matches else 0.0
+            top_score = matches[0].score if matches else 0.0
             logger.info(
                 f"[Auditor] No cluster found — top similarity: {top_score:.3f}. "
                 f"Proceeding as new event."
