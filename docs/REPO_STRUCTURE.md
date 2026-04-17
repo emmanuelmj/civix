@@ -49,7 +49,6 @@ civix/
 │   │   │   ├── agents.py             # /agents status + traces
 │   │   │   ├── clusters.py           # /clusters endpoints
 │   │   │   ├── graph.py              # /graph knowledge graph data
-│   │   │   ├── sensing.py            # /sensing satellite + CCTV
 │   │   │   ├── verification.py       # /complaints/{id}/verify
 │   │   │   ├── reports.py            # /reports executive summary
 │   │   │   ├── auth.py               # /auth login + JWT
@@ -83,7 +82,6 @@ civix/
 │   │   ├── priority.py                # Priority Agent node
 │   │   ├── auditor.py                 # Systemic Auditor node
 │   │   ├── resolution.py             # Resolution Agent node
-│   │   ├── proactive.py              # Proactive Sensor node
 │   │   ├── verification.py           # Verification Agent node
 │   │   └── utils/                     # Shared agent utilities
 │   │       ├── __init__.py
@@ -174,11 +172,6 @@ civix/
 │   │   ├── karnataka-rts-act.pdf
 │   │   ├── rti-act.pdf
 │   │   └── bwssb-sla-guidelines.pdf
-│   ├── satellite/                     # Before/after image pairs
-│   │   ├── ward12-before.tif
-│   │   └── ward12-after.tif
-│   ├── cctv/                          # Test video clips
-│   │   └── zone4-waterlogging.mp4
 │   └── audio/                         # Hindi voice complaint samples
 │       ├── complaint-hindi-01.wav
 │       └── complaint-hindi-02.wav
@@ -220,7 +213,7 @@ Components are organized by function, not by page:
 
 ### Data Directory
 
-All seed data, test fixtures, and demo assets live in `data/`. This directory is `.gitignore`-excluded for large binary files (satellite images, video clips) but JSON seeds are committed.
+All seed data, test fixtures, and demo assets live in `data/`. This directory is `.gitignore`-excluded for large binary files (audio clips) but JSON seeds are committed.
 
 ---
 

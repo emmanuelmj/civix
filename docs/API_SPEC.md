@@ -284,12 +284,6 @@ Get real-time status of all agent nodes in the swarm.
       "last_active": "2026-04-17T07:30:30Z"
     },
     {
-      "name": "proactive_sensor",
-      "status": "idle",
-      "detections": 7,
-      "last_scan": "2026-04-17T06:00:00Z"
-    },
-    {
       "name": "verification_agent",
       "status": "idle",
       "verified": 82,
@@ -405,66 +399,6 @@ Get the full knowledge graph for dashboard rendering.
 
 ---
 
-## Proactive Sensing
-
-### POST `/sensing/satellite`
-
-Trigger satellite image analysis for a specific area.
-
-**Request:**
-```json
-{
-  "image_before_url": "https://minio.local/satellite/ward12-before.tif",
-  "image_after_url": "https://minio.local/satellite/ward12-after.tif",
-  "ward": "Ward 12",
-  "detection_targets": ["garbage pile", "waterlogging", "road damage"]
-}
-```
-
-**Response (200):**
-```json
-{
-  "detections": [
-    {
-      "issue": "waterlogging",
-      "confidence": 0.87,
-      "bounding_box": { "x": 120, "y": 340, "w": 200, "h": 150 },
-      "auto_filed_complaint": "GRV-2026-00155"
-    }
-  ]
-}
-```
-
-### POST `/sensing/cctv`
-
-Trigger CCTV footage analysis.
-
-**Request:**
-```json
-{
-  "video_url": "https://minio.local/cctv/zone4-cam3-clip.mp4",
-  "location": { "lat": 12.9350, "lng": 77.6100 },
-  "ward": "Ward 14"
-}
-```
-
-**Response (200):**
-```json
-{
-  "detections": [
-    {
-      "issue": "open manhole",
-      "severity": 9,
-      "confidence": 0.91,
-      "timestamp_in_video": "00:12",
-      "auto_filed_complaint": "GRV-2026-00156"
-    }
-  ]
-}
-```
-
----
-
 ## Reports
 
 ### GET `/reports/executive`
@@ -488,7 +422,6 @@ Generate an executive summary report.
   "avg_resolution_hours": 18.5,
   "sla_compliance_rate": 0.87,
   "systemic_clusters": 12,
-  "proactive_detections": 7,
   "top_categories": [
     { "category": "water", "count": 58 },
     { "category": "roads", "count": 34 },

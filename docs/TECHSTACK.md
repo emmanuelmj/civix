@@ -132,7 +132,7 @@ Every technology in this stack was selected against a single filter: **does it s
 
 | Attribute | Detail |
 |---|---|
-| **Role** | Vision verification (before/after photo comparison), video analysis (CCTV footage), cost-efficient bulk processing |
+| **Role** | Vision verification (before/after photo comparison), cost-efficient bulk processing |
 | **Why this** | Multimodal (image + video) at a fraction of Claude's cost. Free tier available for hackathon. Flash variant optimized for speed over depth — ideal for binary yes/no verification tasks. |
 
 ### Bhashini (Government of India)

@@ -4,7 +4,7 @@
 
 **Agentic Governance & Grievance Resolution Swarm**
 
-*From reactive ticket-closing to proactive, AI-driven civic intelligence.*
+*From reactive ticket-closing to intelligence-driven civic governance.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-000000.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-1c1c1e.svg)](https://python.org)
@@ -33,7 +33,7 @@ Civix-Pulse is a **multi-agent AI swarm** that autonomously ingests, triages, co
 ```
 Citizen Voice Note (Hindi) ──┐
 Handwritten Letter (OCR) ────┤──→ Agent Swarm ──→ Root-Cause Found ──→ Auto-Filed on Portal
-CCTV / Satellite Feed ───────┘                                        ──→ Officer Dispatched
+Web / WhatsApp Text ─────────┘                                        ──→ Officer Dispatched
                                                                        ──→ AI Verifies Fix
                                                                        ──→ SLA Breach → Auto-Appeal
 ```
@@ -44,9 +44,9 @@ CCTV / Satellite Feed ───────┘                                  
 |---|---|
 | **Autonomous Portal Filing** | A computer-use agent opens a government portal in a headless browser, fills the work-order form, and submits — no API required. |
 | **Multilingual Voice Intake** | Hindi voice complaints via WhatsApp → Bhashini STT → translated, classified, routed. |
-| **Proactive Sensing** | Satellite imagery and CCTV footage analyzed to detect problems *before* anyone complains. |
 | **Root-Cause Intelligence** | Semantic clustering links 50 scattered complaints to one failing pump station. |
 | **AI-Verified Resolution** | Vision model confirms a pothole is actually filled before the ticket closes. |
+| **Policy RAG with Citations** | Auto-cites relevant government policies, RTI acts, and SLA deadlines for every complaint. |
 | **Auto-Appeal on SLA Breach** | System drafts a legal appeal and triggers mock compensation when the government misses its deadline. |
 
 > For the complete tier-wise feature breakdown, see **[docs/features.md](docs/features.md)**.
@@ -60,7 +60,6 @@ flowchart LR
     subgraph Sources["Intake Channels"]
         WA[WhatsApp / Telegram]
         WEB[Web Portal]
-        SAT[Satellite & CCTV]
         DOC[Scanned Documents]
     end
 
@@ -75,7 +74,7 @@ flowchart LR
             PRI[Priority Agent]
             AUD[Systemic Auditor]
             RES[Resolution Agent]
-            PRO[Proactive Sensor]
+            VER[Verification Agent]
         end
         PG[(PostgreSQL + pgvector)]
         REDIS[(Redis)]
@@ -89,7 +88,7 @@ flowchart LR
 
     Sources --> N8N --> API --> ING
     ING --> PRI --> AUD --> RES
-    PRO --> ING
+    RES --> VER
     Swarm <--> PG
     Swarm <--> REDIS
     API -- WebSocket --> Frontend
@@ -158,7 +157,7 @@ docker compose up --build
 | **[TRD.md](docs/TRD.md)** | Technical Requirements — scalability, data governance, and audit compliance. |
 | **[TECHSTACK.md](docs/TECHSTACK.md)** | Technology selection rationale for every layer. |
 | **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System design with Mermaid.js data flow diagrams. |
-| **[AGENT_SWARM.md](docs/AGENT_SWARM.md)** | LangGraph node specifications — Ingestion, Priority, Auditor, Resolution, Proactive. |
+| **[AGENT_SWARM.md](docs/AGENT_SWARM.md)** | LangGraph node specifications — Ingestion, Priority, Auditor, Resolution, Verification. |
 | **[API_SPEC.md](docs/API_SPEC.md)** | FastAPI endpoint contracts with request/response payloads. |
 | **[REPO_STRUCTURE.md](docs/REPO_STRUCTURE.md)** | Folder tree with per-directory explanations. |
 | **[SETUP.md](docs/SETUP.md)** | Step-by-step local execution guide using Docker. |
@@ -171,12 +170,12 @@ Most civic-tech platforms digitize the complaint box. Civix-Pulse replaces it.
 
 | Traditional System | Civix-Pulse |
 |---|---|
-| Citizen must file a complaint | System detects problems from satellite and CCTV |
+| Citizen must file a complaint | Voice-first, multilingual intake via WhatsApp |
 | Ticket routed to one department | Root-cause analysis spans all departments |
 | Closed when officer says "done" | Closed when AI vision confirms resolution |
 | SLA breach = nothing happens | SLA breach = auto-appeal + compensation |
 | Government portal needs API | Computer-use agent fills the form autonomously |
-| Hindi speaker excluded | Voice-first, multilingual intake via WhatsApp |
+| Hindi speaker excluded | Bhashini-powered regional language support |
 
 ---
 

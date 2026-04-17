@@ -168,7 +168,6 @@ Leaves ~3GB for the OS and Docker daemon overhead.
 ### 5.3 Content Integrity
 
 - Perceptual hashing on uploaded photos to detect re-use of previously submitted images.
-- AI-image classifier for synthetic content detection (deepfake guard).
 - Playwright session traces provide tamper-proof audit logs for browser automation.
 
 ---
@@ -181,8 +180,7 @@ Leaves ~3GB for the OS and Docker daemon overhead.
 |---|---|---|
 | **Bhashini** | Hindi STT + translation | Whisper (local) or Google STT |
 | **Anthropic (Claude)** | Agent reasoning, structured output | Gemini Pro |
-| **Google AI (Gemini Flash)** | Vision verification, video analysis | Claude Vision |
-| **Sentinel Hub** | Satellite imagery access | Pre-cached image pairs |
+| **Google AI (Gemini Flash)** | Vision verification | Claude Vision |
 | **Browser-Use** | Computer-use agent for portal filing | Pre-recorded session replay |
 
 ### 6.2 n8n Webhook Contracts
@@ -191,7 +189,7 @@ n8n receives intake from external channels and forwards to FastAPI:
 
 ```json
 {
-  "source": "whatsapp | web | ocr | proactive",
+  "source": "whatsapp | web | ocr",
   "payload": {
     "text": "string | null",
     "audio_url": "string | null",

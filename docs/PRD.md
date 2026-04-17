@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-Civix-Pulse is a multi-agent AI platform that transforms public grievance resolution from a reactive, ticket-based bureaucracy into a proactive, intelligence-driven governance system. It autonomously ingests citizen complaints across modalities (voice, text, handwritten letters, satellite imagery), identifies systemic root causes through cross-complaint correlation, and resolves issues by directly interfacing with government portals — without requiring API access.
+Civix-Pulse is a multi-agent AI platform that transforms public grievance resolution from a reactive, ticket-based bureaucracy into an intelligence-driven governance system. It autonomously ingests citizen complaints across modalities (voice, text, handwritten letters), identifies systemic root causes through cross-complaint correlation, and resolves issues by directly interfacing with government portals — without requiring API access.
 
 ---
 
@@ -29,10 +29,10 @@ India's public grievance ecosystem processes over **30 lakh complaints annually*
 
 Existing civic-tech solutions digitize the complaint box but do not reimagine it. They add a web form in front of the same manual routing, manual resolution, and manual closure process. No commercially available platform offers:
 
-1. **Proactive detection** — identifying infrastructure failures from satellite/CCTV before citizens report them.
-2. **Cross-complaint intelligence** — semantic clustering to surface systemic patterns.
-3. **Autonomous resolution** — a computer-use agent that files work orders on government portals without API integration.
-4. **Governed accountability** — automatic legal appeal generation and compensation triggers on SLA breach.
+1. **Cross-complaint intelligence** — semantic clustering to surface systemic patterns.
+2. **Autonomous resolution** — a computer-use agent that files work orders on government portals without API integration.
+3. **Governed accountability** — automatic legal appeal generation and compensation triggers on SLA breach.
+4. **Voice-first multilingual intake** — removing the literacy barrier with regional language speech-to-text.
 
 ---
 
@@ -56,7 +56,6 @@ Existing civic-tech solutions digitize the complaint box but do not reimagine it
 | O3 | Enable voice-first, multilingual intake | Hindi and English voice complaints processed end-to-end |
 | O4 | Achieve autonomous portal filing | ≥ 90% success rate on mock government portal |
 | O5 | Enforce SLA accountability | 100% of breached SLAs trigger auto-escalation |
-| O6 | Detect problems before citizens report them | ≥ 1 proactive grievance filed per demo session from satellite/CCTV |
 
 ---
 
@@ -64,7 +63,7 @@ Existing civic-tech solutions digitize the complaint box but do not reimagine it
 
 ### 5.1 Multimodal Ingestion
 
-- **FR-1:** The system shall accept grievances via text (web form), voice (WhatsApp), scanned handwritten letters (OCR), and proactive sensing (satellite/CCTV).
+- **FR-1:** The system shall accept grievances via text (web form), voice (WhatsApp), and scanned handwritten letters (OCR).
 - **FR-2:** Voice complaints in Hindi shall be transcribed using Bhashini STT and translated to English for downstream processing.
 - **FR-3:** Handwritten letters shall be processed via OCR and converted to structured JSON.
 - **FR-4:** All intake channels shall converge into a unified complaint schema.
@@ -95,11 +94,11 @@ Existing civic-tech solutions digitize the complaint box but do not reimagine it
 - **FR-17:** A mock UPI compensation notification shall be triggered on SLA breach.
 - **FR-18:** The Policy RAG engine shall auto-cite relevant government policies, RTI acts, and municipal bylaws for each complaint.
 
-### 5.6 Proactive Sensing
+### 5.6 Accountability & Compliance
 
-- **FR-19:** The system shall analyze satellite imagery (Sentinel-2) to detect infrastructure issues (garbage piles, waterlogging).
-- **FR-20:** The system shall analyze CCTV footage to detect visible hazards (open manholes, flooding).
-- **FR-21:** Detected issues shall be auto-filed as grievances attributed to "Proactive Sensor Agent."
+- **FR-19:** On SLA breach, the system shall auto-generate a Right-to-Services Commission appeal as a downloadable PDF.
+- **FR-20:** A mock UPI compensation notification shall be triggered on SLA breach.
+- **FR-21:** The system shall track Time-to-Resolution metrics per department for executive reporting.
 
 ---
 
@@ -121,7 +120,6 @@ Existing civic-tech solutions digitize the complaint box but do not reimagine it
 - Real UPI payment integration.
 - Production WhatsApp Business API (sandbox only).
 - Multi-city deployment.
-- Real-time CCTV stream processing (pre-recorded clips used for demo).
 - Formal causal inference (system produces hypotheses, not proofs).
 
 ---
@@ -131,10 +129,10 @@ Existing civic-tech solutions digitize the complaint box but do not reimagine it
 Civix-Pulse is not a better complaint portal. It is a **governance operating system** that:
 
 1. **Includes the excluded** — voice-first intake in regional languages removes the literacy barrier.
-2. **Detects the undetected** — proactive sensing files grievances for citizens who never file.
-3. **Connects the disconnected** — cross-complaint intelligence breaks departmental silos.
-4. **Penalizes the unaccountable** — auto-appeal and compensation mechanisms make SLA breaches costly.
-5. **Scales the unsaleable** — AI agents handle the volume that human bureaucracies cannot.
+2. **Connects the disconnected** — cross-complaint intelligence breaks departmental silos.
+3. **Penalizes the unaccountable** — auto-appeal and compensation mechanisms make SLA breaches costly.
+4. **Automates the impossible** — browser agents file on portals that have no API.
+5. **Scales the unscaleable** — AI agents handle the volume that human bureaucracies cannot.
 
 > *"We don't route tickets. We detect, file, resolve, and penalize."*
 

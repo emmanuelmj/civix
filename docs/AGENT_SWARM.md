@@ -7,7 +7,7 @@
 
 ## Overview
 
-The Civix-Pulse agent swarm is implemented as a single LangGraph `StateGraph` with six specialized nodes. Each node is a self-contained Python module that receives typed state, performs its task, emits a structured reasoning trace, and returns updated state.
+The Civix-Pulse agent swarm is implemented as a single LangGraph `StateGraph` with five specialized nodes. Each node is a self-contained Python module that receives typed state, performs its task, emits a structured reasoning trace, and returns updated state.
 
 This document specifies each agent's purpose, inputs, outputs, reasoning schema, and failure modes.
 
@@ -49,7 +49,7 @@ Accepts raw multimodal input (text, audio, image) and produces a normalized `Par
 
 ```python
 class RawInput(TypedDict):
-    source: Literal["whatsapp", "web", "ocr", "proactive"]
+    source: Literal["whatsapp", "web", "ocr"]
     text: str | None
     audio_url: str | None
     image_url: str | None
@@ -301,45 +301,7 @@ class ResolutionResult(TypedDict):
 
 ---
 
-## Agent 5 — Proactive Sensor Agent
-
-### Purpose
-
-Detects infrastructure problems from satellite imagery and CCTV footage before citizens report them. Auto-files grievances attributed to the sensor.
-
-### Input Sources
-
-| Source | Format | Detection Model |
-|---|---|---|
-| Sentinel-2 satellite | Before/after image pair | Grounding DINO (zero-shot object detection) |
-| CCTV footage | 30-second video clip | Gemini Flash (video analysis) |
-
-### Detection Prompts
-
-**Satellite (Grounding DINO):**
-```
-Detect: "garbage pile", "waterlogging", "road damage", "construction debris"
-```
-
-**CCTV (Gemini Flash):**
-```
-Analyze this CCTV footage. Identify any visible civic issues:
-- Waterlogging or flooding
-- Open manholes
-- Garbage accumulation
-- Road damage or potholes
-- Fallen trees or debris
-
-For each detection, provide: issue type, severity (1-10), approximate location in frame, confidence score.
-```
-
-### Output
-
-Detected issues are converted to `RawInput` objects with `source: "proactive"` and fed into the standard Ingestion Agent pipeline.
-
----
-
-## Agent 6 — Verification Agent
+## Agent 5 — Verification Agent
 
 ### Purpose
 

@@ -14,8 +14,6 @@ flowchart TB
     subgraph Sources["Intake Channels"]
         WA["WhatsApp\n(Voice/Text)"]
         WEB["Web Portal\n(Form/Upload)"]
-        SAT["Satellite\n(Sentinel-2)"]
-        CCTV["CCTV\n(Video Clips)"]
         SCAN["Scanned Letters\n(OCR)"]
     end
 
@@ -35,7 +33,6 @@ flowchart TB
         PRI["Priority\nAgent"]
         AUD["Systemic\nAuditor"]
         RES["Resolution\nAgent"]
-        PRO["Proactive\nSensor"]
         VER["Verification\nAgent"]
     end
 
@@ -65,7 +62,6 @@ flowchart TB
     ING --> PRI
     PRI --> AUD
     AUD --> RES
-    PRO --> ING
     RES --> VER
     RES --> BROWSER
 
@@ -255,29 +251,7 @@ flowchart TB
 
 ---
 
-## 6. Proactive Sensing Pipeline
-
-The Proactive Sensor Agent operates on a separate trigger (scheduled or manual) rather than citizen-initiated:
-
-```mermaid
-flowchart LR
-    SAT["Sentinel-2\nImage Pair"] --> DINO["Grounding DINO\n(Zero-Shot Detection)"]
-    CCTV["CCTV Clip\n(30s)"] --> GEM["Gemini Flash\n(Video Analysis)"]
-    
-    DINO --> DET{"Detection\nFound?"}
-    GEM --> DET
-    
-    DET -- Yes --> AUTO["Auto-File\nGrievance"]
-    DET -- No --> SKIP["No Action"]
-    
-    AUTO --> ING["→ Ingestion Agent\n(Normal Pipeline)"]
-```
-
-Detected issues enter the standard pipeline as grievances attributed to `source: proactive_sensor`.
-
----
-
-## 7. Security Boundaries
+## 6. Security Boundaries
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -300,7 +274,7 @@ Detected issues enter the standard pipeline as grievances attributed to `source:
 
 ---
 
-## 8. References
+## 7. References
 
 - [Agent Swarm](AGENT_SWARM.md) — Detailed specifications for each LangGraph node.
 - [API Spec](API_SPEC.md) — Endpoint contracts and payload schemas.
