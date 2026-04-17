@@ -18,7 +18,8 @@ import { T } from '../constants/theme';
  *   onCapture   – fn({ event_id, officer_id, resolution_lat, resolution_lng, image_base64 })
  *   onClose     – fn() — back without submitting
  */
-export default function CameraScreen({ incident, officerId, onCapture, onClose }) {
+// Props match what App.js passes: task, officerId, onComplete, onCancel
+export default function CameraScreen({ task: incident, officerId, onComplete: onCapture, onCancel: onClose }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturing, setCapturing] = useState(false);
   const cameraRef = useRef(null);
