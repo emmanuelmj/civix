@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
-import { PulseProvider } from "@/lib/pulse-context";
+import { DashboardProvider } from "@/lib/dashboard-context";
 
 export default function DashboardLayout({
   children,
@@ -13,8 +13,8 @@ export default function DashboardLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <PulseProvider>
-      <div className="flex h-full">
+    <DashboardProvider>
+      <div className="flex h-screen overflow-hidden">
         {/* Mobile overlay */}
         {sidebarOpen && (
           <div className="fixed inset-0 bg-black/30 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
@@ -26,16 +26,16 @@ export default function DashboardLayout({
           lg:translate-x-0
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
         `}>
-          <Sidebar />
+          <Sidebar onNavigate={() => setSidebarOpen(false)} />
         </div>
 
-        <div className="flex-1 lg:ml-52 flex flex-col">
+        <div className="flex-1 lg:ml-52 flex flex-col min-h-0">
           <Topbar onMenuToggle={() => setSidebarOpen(v => !v)} />
-          <main className="flex-1 overflow-hidden" style={{ background: "var(--bg-base)" }}>
+          <main className="flex-1 min-h-0 overflow-hidden" style={{ background: "var(--bg-base)" }}>
             {children}
           </main>
         </div>
       </div>
-    </PulseProvider>
+    </DashboardProvider>
   );
 }

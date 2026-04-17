@@ -10,8 +10,6 @@ venv/
 
 # Environment
 .env
-.env.local
-.env.*.local
 
 # IDE
 .vscode/
@@ -23,18 +21,10 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Node / Next.js
+# Node
 node_modules/
 .next/
-out/
-*.tsbuildinfo
-next-env.d.ts
-
-# Expo
 .expo/
 
 # Docker
 *.log
-
-# Misc
-claudecode-linux-x64

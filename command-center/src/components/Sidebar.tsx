@@ -1,27 +1,34 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useDashboard, type TabId } from "@/lib/dashboard-context";
 
-export function Sidebar() {
-  const pathname = usePathname();
+interface SidebarProps {
+  onNavigate?: () => void;
+}
 
-  const navItems = [
-    { label: "Live Grid", icon: "◫", href: "/" },
-    { label: "Intake Feed", icon: "◉", href: "/intake" },
-    { label: "Swarm Log", icon: "⧉", href: "/swarm-log" },
-    { label: "Agent Canvas", icon: "⬡", href: "/canvas" },
-    { label: "Knowledge Graph", icon: "◎", href: "/graph" },
-    { label: "Reports", icon: "▤", href: "/reports" },
-    { label: "Analytics", icon: "◔", href: "/analytics" },
-    { label: "Officers", icon: "⊕", href: "/officers" },
-    { label: "Settings", icon: "⚙", href: "/settings" },
-  ];
+const navItems: { label: TabId; icon: string }[] = [
+  { label: "Live Grid", icon: "◫" },
+  { label: "Intake Feed", icon: "◉" },
+  { label: "Swarm Log", icon: "⧉" },
+  { label: "Agent Canvas", icon: "⬡" },
+  { label: "Reports", icon: "▤" },
+  { label: "Analytics", icon: "◔" },
+  { label: "Officers", icon: "⊕" },
+  { label: "Settings", icon: "⚙" },
+];
+
+export function Sidebar({ onNavigate }: SidebarProps) {
+  const { activeTab, setActiveTab } = useDashboard();
+
+  const handleClick = (tab: TabId) => {
+    setActiveTab(tab);
+    onNavigate?.(); // close mobile sidebar
+  };
 
   return (
     <aside
       className="fixed left-0 top-0 bottom-0 w-52 flex flex-col border-r z-30"
-      style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}
+      style={{ background: "var(--bg-card)", borderColor: "var(--border)", boxShadow: "var(--shadow-card)" }}
     >
       {/* Logo */}
       <div className="px-4 py-4 border-b" style={{ borderColor: "var(--border-light)" }}>
@@ -44,11 +51,11 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = activeTab === item.label;
           return (
-            <Link
+            <button
               key={item.label}
-              href={item.href}
+              onClick={() => handleClick(item.label)}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-all"
               style={{
                 background: isActive ? "var(--accent-blue-dim)" : "transparent",
@@ -60,7 +67,7 @@ export function Sidebar() {
               {isActive && (
                 <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent-blue)" }} />
               )}
-            </Link>
+            </button>
           );
         })}
       </nav>

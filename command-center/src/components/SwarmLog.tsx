@@ -16,38 +16,40 @@ interface SwarmLogProps {
 
 export function SwarmLog({ entries }: SwarmLogProps) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2.5 border-b"
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b"
         style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono uppercase tracking-widest"
+          <span className="text-[10px] font-bold font-mono uppercase tracking-[0.2em]"
             style={{ color: "var(--fg-muted)" }}>
             Swarm Log
           </span>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+          <span className="text-xs font-mono px-2 py-0.5 rounded"
             style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}>
             {entries.length}
           </span>
         </div>
-        <span className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>⧉ brain</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.15em] font-mono" style={{ color: "var(--fg-muted)" }}>⧉ brain</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+      <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-3 space-y-2">
         {entries.map((entry) => {
           const style = TYPE_STYLES[entry.type];
+          const isEscalation = entry.type === "escalation";
           return (
-            <div key={entry.id} className="feed-card px-2.5 py-2 rounded-md"
-              style={{ background: "var(--bg-elevated)" }}>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[9px] font-mono font-bold px-1 py-px rounded"
+            <div key={entry.id}
+              className={`feed-card px-3.5 py-3 rounded-xl break-words transition-all duration-300 hover:-translate-y-0.5 cursor-pointer paper-card ${isEscalation ? "glow-critical" : ""}`}
+              style={isEscalation ? { borderColor: "rgba(239,68,68,0.3)" } : undefined}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
                   style={{ background: `${style.color}22`, color: style.color }}>
                   {style.prefix}
                 </span>
-                <span className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
+                <span className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>
                   {new Date(entry.timestamp).toLocaleTimeString("en-IN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
               </div>
-              <p className="text-[11px] font-mono leading-relaxed" style={{ color: "var(--fg-secondary)" }}>
+              <p className="text-sm font-mono leading-relaxed break-words" style={{ color: "var(--fg-secondary)" }}>
                 {entry.message}
               </p>
             </div>
@@ -55,7 +57,7 @@ export function SwarmLog({ entries }: SwarmLogProps) {
         })}
 
         {entries.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-[11px] font-mono"
+          <div className="flex items-center justify-center h-32 text-sm font-mono"
             style={{ color: "var(--fg-muted)" }}>
             Swarm idle…
           </div>

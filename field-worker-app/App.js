@@ -109,19 +109,25 @@ export default function App() {
   const [activeTask,    setActiveTask]    = useState(null);
   const [activeIssues,  setActiveIssues]  = useState([]);
 
+  // Tracks whether the officer has gone on duty this session (prevents re-showing overlay on return)
+  const [hasGoneOnDuty, setHasGoneOnDuty] = useState(false);
+
   // Dashboard overlays (all position:absolute, no Modal portals)
   const [dutyOverlay,   setDutyOverlay]   = useState(false);
   const [menuOpen,      setMenuOpen]      = useState(false);
 
   // Active task — support request overlay
-  const [supportOpen,   setSupportOpen]   = useState(false);
-  const [supportText,   setSupportText]   = useState('');
-  const [selectedDept,  setSelectedDept]  = useState(null);  // chip selection
-  const [supportSent,   setSupportSent]   = useState(false);
+  const [supportOpen,        setSupportOpen]        = useState(false);
+  const [supportText,        setSupportText]        = useState('');
+  const [selectedDept,       setSelectedDept]       = useState(null);
+  const [supportSent,        setSupportSent]        = useState(false);
+  const [assignedSupport,    setAssignedSupport]    = useState(null);
 
-  // Verification sub-phases: 'idle' | 'camera' | 'processing' | 'success'
-  const [verifyPhase,   setVerifyPhase]   = useState('idle');
-  const [capturedImage, setCapturedImage] = useState(null);
+  // Verification state (replaces verifyPhase sub-phases for web demo)
+  const [verifyPhase,        setVerifyPhase]        = useState('idle');
+  const [capturedImage,      setCapturedImage]      = useState(null);
+  const [isVerifying,        setIsVerifying]        = useState(false);
+  const [verificationSuccess,setVerificationSuccess] = useState(false);
 
   // Camera permissions
   const [camPerm, requestCamPerm] = useCameraPermissions();
@@ -134,10 +140,10 @@ export default function App() {
     return () => clearTimeout(t);
   }, [appState]);
 
-  // ── Show duty popup when arriving at Dashboard ─────────────────────────────
+  // ── Show duty popup when arriving at Dashboard (only if not already on duty) ─
   useEffect(() => {
     if (appState === 2) {
-      setDutyOverlay(true);
+      if (!hasGoneOnDuty) setDutyOverlay(true);
       setSupportSent(false);
     }
   }, [appState]);
@@ -157,11 +163,14 @@ export default function App() {
     Linking.openURL(`https://maps.google.com/?q=${task.lat},${task.lng}`);
   };
 
-  const submitSupport = () => {
+  const handleSupportSubmit = () => {
     setSupportOpen(false);
     setSupportText('');
     setSelectedDept(null);
     setSupportSent(true);
+    setTimeout(() => {
+      setAssignedSupport({ dept: 'Water & Sanitation', id: 'Unit W-04', eta: '3 mins' });
+    }, 1500);
   };
 
   const handleTaskCompleted = async () => {
@@ -170,25 +179,34 @@ export default function App() {
     }
     setVerifyPhase('idle');
     setCapturedImage(null);
+    setIsVerifying(false);
+    setVerificationSuccess(false);
     setAppState(4);
+  };
+
+  // Shared capture-success handler — called by both the real camera and the web simulator
+  const handleCaptureSuccess = (base64Uri = null) => {
+    setCapturedImage(base64Uri);
+    setVerifyPhase('processing');
+    setTimeout(() => setVerifyPhase('success'), 3000);
+  };
+
+  const handleSimulateCapture = () => {
+    setIsVerifying(true);
+    setTimeout(() => {
+      setIsVerifying(false);
+      setVerificationSuccess(true);
+    }, 3000);
   };
 
   const takePhoto = async () => {
     if (!cameraRef.current) return;
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6 });
-      setCapturedImage(`data:image/jpeg;base64,${photo.base64}`);
-      setVerifyPhase('processing');
-      setTimeout(() => setVerifyPhase('success'), 3000);
+      handleCaptureSuccess(`data:image/jpeg;base64,${photo.base64}`);
     } catch {
-      simulateCapture();
+      handleCaptureSuccess(null);
     }
-  };
-
-  const simulateCapture = () => {
-    setCapturedImage(null); // web placeholder
-    setVerifyPhase('processing');
-    setTimeout(() => setVerifyPhase('success'), 3000);
   };
 
   const returnToDashboard = () => {
@@ -196,6 +214,9 @@ export default function App() {
     setActiveTask(null);
     setCapturedImage(null);
     setVerifyPhase('idle');
+    setIsVerifying(false);
+    setVerificationSuccess(false);
+    setAssignedSupport(null);
     setAppState(2);
   };
 
@@ -261,7 +282,7 @@ export default function App() {
               <TouchableOpacity style={s.recentBtn} onPress={() => setAppState(3)} activeOpacity={0.85}>
                 <Text style={s.recentBtnText}>📋  RECENT ISSUES</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.offDutyBtn} onPress={() => setAppState(0)} activeOpacity={0.85}>
+              <TouchableOpacity style={s.offDutyBtn} onPress={() => { setHasGoneOnDuty(false); setAppState(1); }} activeOpacity={0.85}>
                 <Text style={s.offDutyBtnText}>GO OFF DUTY</Text>
               </TouchableOpacity>
             </View>
@@ -311,6 +332,18 @@ export default function App() {
               <TouchableOpacity style={s.supportBtn} onPress={() => setSupportOpen(true)} activeOpacity={0.85}>
                 <Text style={s.supportBtnText}>🤝  REQUEST SUPPORT</Text>
               </TouchableOpacity>
+
+              {/* Swarm dispatch confirmation card — appears 1.5s after submit */}
+              {assignedSupport && (
+                <View style={{ marginTop: 16, padding: 16, backgroundColor: '#ECFDF5', borderRadius: 8, borderWidth: 1, borderColor: '#10B981' }}>
+                  <Text style={{ color: '#065F46', fontWeight: 'bold', fontSize: 14 }}>
+                    ✓ SWARM DISPATCHED
+                  </Text>
+                  <Text style={{ color: '#047857', marginTop: 4 }}>
+                    {assignedSupport.dept} ({assignedSupport.id}) is en route. ETA: {assignedSupport.eta}
+                  </Text>
+                </View>
+              )}
             </ScrollView>
 
             {/* TASK COMPLETED — always at bottom */}
@@ -324,121 +357,58 @@ export default function App() {
 
       // ── 4: VERIFICATION ──────────────────────────────────────────────────
       case 4:
-        // Camera live view
-        if (verifyPhase === 'camera') {
-          const canUseCamera = Platform.OS !== 'web' && camPerm?.granted;
-          if (canUseCamera) {
-            return (
-              <View style={{ flex: 1, backgroundColor: '#000' }}>
-                <CameraView style={{ flex: 1 }} ref={cameraRef} facing="back">
-                  <View style={s.camOverlay}>
-                    <TouchableOpacity style={s.camShutter} onPress={takePhoto} activeOpacity={0.85}>
-                      <View style={s.camShutterInner} />
-                    </TouchableOpacity>
-                  </View>
-                </CameraView>
-              </View>
-            );
-          }
-          // Web / no permission fallback — immediately simulate
+        // ── Success screen ────────────────────────────────────────────────
+        if (verificationSuccess) {
           return (
-            <View style={s.camFallback}>
-              <View style={s.camFallbackFrame}>
-                <View style={s.camCornerTL} /><View style={s.camCornerTR} />
-                <View style={s.camCornerBL} /><View style={s.camCornerBR} />
-                <Text style={s.camFallbackIcon}>📷</Text>
-                <Text style={s.camFallbackText}>Camera unavailable on web</Text>
-              </View>
-              <TouchableOpacity style={s.simBtn} onPress={simulateCapture} activeOpacity={0.85}>
-                <Text style={s.simBtnText}>SIMULATE CAPTURE (WEB DEMO)</Text>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#10B981', marginBottom: 20 }}>✓ Verification Successful</Text>
+              <Text style={{ color: '#6B7280', marginBottom: 40 }}>AI Swarm has confirmed resolution. Funds released.</Text>
+              <TouchableOpacity style={{ backgroundColor: '#1F2937', padding: 16, borderRadius: 8 }} onPress={returnToDashboard}>
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>RETURN TO DASHBOARD</Text>
               </TouchableOpacity>
             </View>
           );
         }
 
-        // Idle / processing / success
-        return (
-          <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
-            {verifyPhase === 'idle' && (
-              <View style={s.header}>
-                <TouchableOpacity onPress={() => setAppState(3)} hitSlop={HIT} style={s.backBtn}>
-                  <Text style={s.backArrow}>←</Text>
-                  <Text style={s.backLabel}>Back</Text>
-                </TouchableOpacity>
-                <Text style={s.headerTitle}>VERIFICATION</Text>
-                <View style={{ width: 70 }} />
-              </View>
-            )}
-
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-              {verifyPhase === 'idle' && (
-                <>
-                  <View style={s.verifyIconWrap}>
-                    <Text style={{ fontSize: 44 }}>📸</Text>
-                  </View>
-                  <Text style={s.verifyTitle}>Photo Verification Required</Text>
-                  <Text style={s.verifyDesc}>
-                    Take a live photo to confirm the issue is resolved.{'\n'}
-                    This triggers automatic fund release via the AI Swarm.
-                  </Text>
-                  {activeTask && (
-                    <View style={s.taskChip}>
-                      <Text style={s.taskChipText} numberOfLines={1}>📌  {activeTask.title}</Text>
-                    </View>
-                  )}
-                  <TouchableOpacity
-                    style={[s.completedBtn, { width: '100%', marginTop: 32 }]}
-                    onPress={() => setVerifyPhase('camera')}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={s.completedBtnText}>PHOTO VERIFICATION</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {(verifyPhase === 'processing' || verifyPhase === 'success') && (
-                <>
-                  {/* Thumbnail */}
-                  <View style={s.thumbWrap}>
-                    {capturedImage ? (
-                      <Image source={{ uri: capturedImage }} style={s.thumb} resizeMode="cover" />
-                    ) : (
-                      <View style={[s.thumb, { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }]}>
-                        <Text style={{ fontSize: 40 }}>📷</Text>
-                      </View>
-                    )}
-                    {verifyPhase === 'success' && (
-                      <View style={s.thumbCheck}><Text style={{ fontSize: 18, color: '#fff', fontWeight: '900' }}>✓</Text></View>
-                    )}
-                  </View>
-
-                  {verifyPhase === 'processing' && (
-                    <>
-                      <ActivityIndicator size="large" color={T.accent} style={{ marginBottom: 16 }} />
-                      <Text style={s.processingTitle}>AI Swarm Verifying Resolution…</Text>
-                      <Text style={s.processingHint}>Analyzing photo, GPS & incident data</Text>
-                    </>
-                  )}
-
-                  {verifyPhase === 'success' && (
-                    <View style={{ alignItems: 'center', width: '100%' }}>
-                      <Text style={{ fontSize: 38, marginBottom: 10 }}>✅</Text>
-                      <Text style={s.successTitle}>Verification Successful</Text>
-                      <Text style={s.successSub}>Funds Released</Text>
-                      <View style={s.successCard}>
-                        <Text style={s.successCardText}>
-                          AI Swarm confirmed the resolution. Incident closed and payment processed automatically.
-                        </Text>
-                      </View>
-                      <TouchableOpacity style={[s.completedBtn, { width: '100%' }]} onPress={returnToDashboard} activeOpacity={0.85}>
-                        <Text style={s.completedBtnText}>RETURN TO DASHBOARD</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </>
-              )}
+        // ── AI verifying spinner ──────────────────────────────────────────
+        if (isVerifying) {
+          return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
+              <ActivityIndicator size="large" color="#3B82F6" />
+              <Text style={{ marginTop: 20, fontSize: 18, color: '#374151', fontWeight: 'bold' }}>AI Swarm Verifying Resolution...</Text>
             </View>
-          </SafeAreaView>
+          );
+        }
+
+        // ── Camera / web simulation ───────────────────────────────────────
+        // On native with permission, show live camera; otherwise show web demo
+        if (Platform.OS !== 'web' && camPerm?.granted) {
+          return (
+            <View style={{ flex: 1, backgroundColor: '#000' }}>
+              <CameraView style={{ flex: 1 }} ref={cameraRef} facing="back">
+                <View style={s.camOverlay}>
+                  <TouchableOpacity style={s.camShutter} onPress={takePhoto} activeOpacity={0.85}>
+                    <View style={s.camShutterInner} />
+                  </TouchableOpacity>
+                </View>
+              </CameraView>
+            </View>
+          );
+        }
+
+        // Web demo fallback (default)
+        return (
+          <View style={{ flex: 1, backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ width: 300, height: 300, borderWidth: 2, borderColor: 'white', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginBottom: 40 }}>
+              <Text style={{ color: 'white' }}>Camera disabled for Web Demo.</Text>
+            </View>
+            <TouchableOpacity
+              style={{ backgroundColor: '#3B82F6', width: '80%', padding: 20, borderRadius: 8, alignItems: 'center' }}
+              onPress={handleSimulateCapture}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>SIMULATE CAPTURE (WEB DEMO)</Text>
+            </TouchableOpacity>
+          </View>
         );
 
       default:
@@ -453,8 +423,8 @@ export default function App() {
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         {renderScreen()}
 
-        {/* ── GO ON DUTY overlay (Dashboard only) ────────────────────────── */}
-        {appState === 2 && dutyOverlay && (
+        {/* ── GO ON DUTY overlay (Dashboard only, shown once per session) ────── */}
+        {appState === 2 && dutyOverlay && !hasGoneOnDuty && (
           <View style={s.overlayBg}>
             <View style={s.overlayCard}>
               <View style={s.logoRow}>
@@ -466,7 +436,7 @@ export default function App() {
               <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
               <InfoRow label="ROLE"        value={OFFICER_ROLE} />
               <InfoRow label="DEPARTMENT"  value="Field Operations" />
-              <TouchableOpacity style={s.dutyBtn} onPress={() => setDutyOverlay(false)} activeOpacity={0.85}>
+              <TouchableOpacity style={s.dutyBtn} onPress={() => { setDutyOverlay(false); setHasGoneOnDuty(true); }} activeOpacity={0.85}>
                 <Text style={s.dutyBtnText}>GO ON DUTY</Text>
               </TouchableOpacity>
             </View>
@@ -527,7 +497,7 @@ export default function App() {
               {/* Submit disabled until a dept chip is selected */}
               <TouchableOpacity
                 style={[s.submitBtn, !selectedDept && s.submitBtnDisabled]}
-                onPress={selectedDept ? submitSupport : undefined}
+                onPress={selectedDept ? handleSupportSubmit : undefined}
                 activeOpacity={selectedDept ? 0.85 : 1}
               >
                 <Text style={s.submitBtnText}>
@@ -799,4 +769,26 @@ const s = StyleSheet.create({
   submitBtn:         { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 16, alignItems: 'center' },
   submitBtnDisabled: { backgroundColor: '#D1D5DB' },
   submitBtnText:     { fontSize: 13, fontWeight: '800', color: T.white, letterSpacing: 1.2 },
+
+  // ── Assigned support card (Fix 3) ─────────────────────────────────────────
+  assignedCard: {
+    marginTop: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 14,
+  },
+  assignedTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1D4ED8',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  assignedBody: {
+    fontSize: 14,
+    color: '#1E3A5F',
+    lineHeight: 22,
+  },
 });

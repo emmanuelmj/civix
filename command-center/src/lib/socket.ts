@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "./types";
+import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus } from "./types";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/dashboard";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -38,12 +38,24 @@ function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
     assigned_officer: off
       ? {
           officer_id: (off.officer_id as string) || "OP-000",
+          name: off.name as string | undefined,
+          skills: off.skills as string[] | undefined,
           current_lat: off.current_lat as number,
           current_lng: off.current_lng as number,
+          distance_km: off.distance_km as number | undefined,
+          active_tasks: off.active_tasks as number | undefined,
         }
       : undefined,
-    log_message: `Impact score: ${pe.impact_score}. ${pe.cluster_found ? "Cluster detected." : "New event."} ${off ? `Dispatched: ${off.officer_id}` : "Awaiting dispatch."}`,
+    log_message: `Impact score: ${pe.impact_score}. ${pe.cluster_found ? `Cluster of ${pe.cluster_size} events.` : "Isolated event."} ${off ? `→ ${off.name || off.officer_id} (${(off.distance_km as number)?.toFixed(1) || "?"}km)` : "Awaiting dispatch."}`,
     timestamp: Date.now(),
+    cluster_found: pe.cluster_found as boolean | undefined,
+    cluster_id: pe.cluster_id as string | undefined,
+    cluster_size: pe.cluster_size as number | undefined,
+    citizen_name: pe.citizen_name as string | undefined,
+    citizen_id: pe.citizen_id as string | undefined,
+    issue_type: pe.issue_type as string | undefined,
+    panic_flag: pe.panic_flag as boolean | undefined,
+    sentiment_score: pe.sentiment_score as number | undefined,
   };
 }
 
@@ -294,6 +306,30 @@ export async function triggerAnalysis(): Promise<{
       ok: true,
       message: `${data.events_fired}/${data.total} events processed via LangGraph`,
     };
+  } catch {
+    return { ok: false, message: "Backend unreachable." };
+  }
+}
+
+// ── Pinecone status — for Settings view ────────────────────────────
+
+export async function fetchPineconeStatus(): Promise<PineconeStatus | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/pinecone/status`);
+    if (!res.ok) return null;
+    return (await res.json()) as PineconeStatus;
+  } catch {
+    return null;
+  }
+}
+
+// ── Force watcher rescan ───────────────────────────────────────────
+
+export async function triggerRescan(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/watcher/rescan`, { method: "POST" });
+    if (!res.ok) return { ok: false, message: `Backend returned ${res.status}` };
+    return { ok: true, message: "Rescan triggered" };
   } catch {
     return { ok: false, message: "Backend unreachable." };
   }

@@ -38,15 +38,22 @@ type MapLibreType = typeof import("maplibre-gl");
 
 interface MapLayerProps {
   events: PulseEvent[];
+  onEventClick?: (event: PulseEvent) => void;
+  onViewDetails?: (event: PulseEvent) => void;
 }
 
-export function MapLayer({ events }: MapLayerProps) {
+export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mlRef = useRef<MapLibreType | null>(null);
   const readyRef = useRef(false);
   const eventsRef = useRef<PulseEvent[]>(events);
   eventsRef.current = events;
+  const onEventClickRef = useRef(onEventClick);
+  onEventClickRef.current = onEventClick;
+  const onViewDetailsRef = useRef(onViewDetails);
+  onViewDetailsRef.current = onViewDetails;
+  const pulseRef = useRef<number | null>(null);
 
   const syncMarkers = useCallback(() => {
     const map = mapRef.current;
@@ -67,6 +74,11 @@ export function MapLayer({ events }: MapLayerProps) {
         domain: e.domain,
         status: e.status,
         officer: e.assigned_officer?.officer_id ?? "",
+        cluster_found: e.cluster_found ?? false,
+        cluster_size: e.cluster_size ?? 0,
+        citizen_name: e.citizen_name ?? "",
+        panic_flag: e.panic_flag ?? false,
+        sentiment_score: e.sentiment_score ?? null,
       },
     }));
 
@@ -97,48 +109,62 @@ export function MapLayer({ events }: MapLayerProps) {
         properties: { id: e.event_id },
       }));
 
-    const eventGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: eventFeatures };
-    const officerGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: officerFeatures };
-    const lineGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: lineFeatures };
+    // Build GeoJSON for cluster ring overlay
+    const clusterFeatures: GeoJSON.Feature[] = currentEvents
+      .filter((e) => e.cluster_found)
+      .map((e) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [e.coordinates.lng, e.coordinates.lat] },
+        properties: {
+          id: e.event_id,
+          cluster_id: e.cluster_id ?? "",
+          cluster_size: e.cluster_size ?? 1,
+        },
+      }));
 
-    // Update or create sources
-    // Heatmap source uses weight based on severity
+    // Build GeoJSON for heatmap (all events, weighted by severity)
     const heatFeatures: GeoJSON.Feature[] = currentEvents.map((e) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [e.coordinates.lng, e.coordinates.lat] },
       properties: {
-        weight: e.severity === "critical" ? 1.0 : e.severity === "high" ? 0.7 : 0.3,
+        weight: e.severity === "critical" ? 1.0 : e.severity === "high" ? 0.6 : 0.3,
       },
     }));
+
+    const eventGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: eventFeatures };
+    const officerGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: officerFeatures };
+    const lineGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: lineFeatures };
+    const clusterGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: clusterFeatures };
     const heatGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: heatFeatures };
 
-    const heatSrc = map.getSource("heat") as maplibregl.GeoJSONSource | undefined;
+    // ── Heatmap source & layer (below everything) ──
+    const heatSrc = map.getSource("heatmap") as maplibregl.GeoJSONSource | undefined;
     if (heatSrc) {
       heatSrc.setData(heatGeoJSON);
     } else {
-      map.addSource("heat", { type: "geojson", data: heatGeoJSON });
+      map.addSource("heatmap", { type: "geojson", data: heatGeoJSON });
       map.addLayer({
-        id: "heat-layer",
+        id: "heatmap-layer",
         type: "heatmap",
-        source: "heat",
+        source: "heatmap",
         paint: {
           "heatmap-weight": ["get", "weight"],
-          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 15, 2],
-          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 20, 15, 35],
+          "heatmap-intensity": 1,
+          "heatmap-radius": 28,
+          "heatmap-opacity": 0.3,
           "heatmap-color": [
             "interpolate", ["linear"], ["heatmap-density"],
-            0, "rgba(0,0,0,0)",
-            0.2, "rgba(37,99,235,0.15)",
-            0.4, "rgba(37,99,235,0.3)",
-            0.6, "rgba(202,138,4,0.45)",
-            0.8, "rgba(220,38,38,0.55)",
-            1, "rgba(220,38,38,0.7)",
+            0,   "rgba(0,0,0,0)",
+            0.2, "rgba(34,197,94,0.4)",
+            0.4, "rgba(234,179,8,0.5)",
+            0.6, "rgba(249,115,22,0.6)",
+            1,   "rgba(239,68,68,0.8)",
           ],
-          "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 12, 0.8, 16, 0.3],
         },
       });
     }
 
+    // ── Event source & layers ──
     const eventSrc = map.getSource("events") as maplibregl.GeoJSONSource | undefined;
     if (eventSrc) {
       eventSrc.setData(eventGeoJSON);
@@ -149,7 +175,7 @@ export function MapLayer({ events }: MapLayerProps) {
         type: "circle",
         source: "events",
         paint: {
-          "circle-radius": ["match", ["get", "severity"], "critical", 9, "high", 7, 5],
+          "circle-radius": ["match", ["get", "severity"], "critical", 11, "high", 9, 6],
           "circle-color": ["get", "color"],
           "circle-opacity": 0.7,
           "circle-stroke-width": 2,
@@ -164,11 +190,64 @@ export function MapLayer({ events }: MapLayerProps) {
         source: "events",
         filter: ["==", ["get", "severity"], "critical"],
         paint: {
-          "circle-radius": 16,
+          "circle-radius": 19,
           "circle-color": "#dc2626",
           "circle-opacity": 0.12,
         },
       });
+    }
+
+    // ── Cluster ring source & layer ──
+    const clusterSrc = map.getSource("cluster-rings") as maplibregl.GeoJSONSource | undefined;
+    if (clusterSrc) {
+      clusterSrc.setData(clusterGeoJSON);
+    } else {
+      map.addSource("cluster-rings", { type: "geojson", data: clusterGeoJSON });
+      map.addLayer(
+        {
+          id: "cluster-ring-layer",
+          type: "circle",
+          source: "cluster-rings",
+          paint: {
+            "circle-radius": 22,
+            "circle-color": "transparent",
+            "circle-stroke-width": 2.5,
+            "circle-stroke-color": "#a855f7",
+            "circle-stroke-opacity": 0.6,
+          },
+        },
+        "events-circle" // render below event dots
+      );
+      map.addLayer(
+        {
+          id: "cluster-ring-fill",
+          type: "circle",
+          source: "cluster-rings",
+          paint: {
+            "circle-radius": 22,
+            "circle-color": "#a855f7",
+            "circle-opacity": 0.08,
+          },
+        },
+        "cluster-ring-layer" // below the ring stroke
+      );
+
+      // Pulse animation for cluster rings
+      let opacity = 0.08;
+      let rising = true;
+      const animate = () => {
+        if (!mapRef.current || !readyRef.current) return;
+        opacity += rising ? 0.004 : -0.004;
+        if (opacity >= 0.18) rising = false;
+        if (opacity <= 0.04) rising = true;
+        try {
+          map.setPaintProperty("cluster-ring-fill", "circle-opacity", opacity);
+          map.setPaintProperty("cluster-ring-layer", "circle-stroke-opacity", 0.3 + opacity * 2);
+        } catch { /* layer may be removed */ }
+        pulseRef.current = requestAnimationFrame(animate);
+      };
+      if (pulseRef.current) cancelAnimationFrame(pulseRef.current);
+      pulseRef.current = requestAnimationFrame(animate);
     }
 
     const officerSrc = map.getSource("officers") as maplibregl.GeoJSONSource | undefined;
@@ -181,7 +260,7 @@ export function MapLayer({ events }: MapLayerProps) {
         type: "circle",
         source: "officers",
         paint: {
-          "circle-radius": 5,
+          "circle-radius": 6,
           "circle-color": "#2563eb",
           "circle-stroke-width": 2,
           "circle-stroke-color": "#dbeafe",
@@ -240,22 +319,59 @@ export function MapLayer({ events }: MapLayerProps) {
         syncMarkers();
       });
 
-      // Click popup for events
+      // Enhanced click popup for events
       map.on("click", "events-circle", (e) => {
         if (!e.features?.[0]) return;
         const props = e.features[0].properties;
         const coords = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
 
-        new ml.Popup({ offset: 12, closeButton: false, maxWidth: "220px" })
+        // Fire onEventClick (popup only — does NOT open detail panel)
+        const matchedEvent = eventsRef.current.find((ev) => ev.event_id === props.id);
+        if (matchedEvent) onEventClickRef.current?.(matchedEvent);
+
+        const severityColors: Record<string, string> = {
+          critical: "#dc2626", high: "#f59e0b", standard: "#22c55e",
+        };
+        const sevColor = severityColors[props.severity] ?? "#6b7280";
+        const clusterBadge = props.cluster_found === true || props.cluster_found === "true"
+          ? `<span style="background:#ede9fe;color:#7c3aed;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;">🔗 Cluster of ${props.cluster_size ?? "N"}</span> `
+          : "";
+        const panicBadge = props.panic_flag === true || props.panic_flag === "true"
+          ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;">🚨 PANIC</span> `
+          : "";
+        const impactLine = props.sentiment_score != null
+          ? `<div style="color:#71717a;font-size:12px;margin-top:4px;">Impact score: ${Number(props.sentiment_score).toFixed(2)}</div>`
+          : "";
+
+        const popup = new ml.Popup({ offset: 14, closeButton: false, maxWidth: "320px" })
           .setLngLat(coords)
           .setHTML(
-            `<div style="font-family:system-ui;font-size:12px;">
-              <div style="font-weight:600;margin-bottom:4px;color:#1e1e1e;">${props.summary}</div>
-              <div style="color:#5c5856;font-size:10px;">${props.domain} · ${String(props.severity).toUpperCase()}</div>
-              ${props.officer ? `<div style="color:#2563eb;font-size:10px;margin-top:4px;">→ ${props.officer}</div>` : ""}
+            `<div style="font-family:system-ui;font-size:14px;line-height:1.6;padding:8px;">
+              <div style="font-weight:700;margin-bottom:6px;color:#1c1c1e;font-size:17px;">${props.summary}</div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+                <span style="background:#f4f4f5;color:#3f3f46;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:500;">${props.domain}</span>
+                <span style="background:${sevColor}15;color:${sevColor};padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;text-transform:uppercase;">${props.severity}</span>
+                ${clusterBadge}${panicBadge}
+              </div>
+              ${props.citizen_name ? `<div style="color:#52525b;font-size:13px;">👤 ${props.citizen_name}</div>` : ""}
+              ${impactLine}
+              ${props.officer ? `<div style="color:#2563eb;font-size:13px;margin-top:4px;">→ ${props.officer}</div>` : ""}
+              <div style="margin-top:10px;text-align:right;">
+                <button data-view-details="${props.id}" style="background:#007AFF;border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;padding:6px 16px;border-radius:8px;">View Details →</button>
+              </div>
             </div>`
           )
           .addTo(map);
+
+        // Attach click handler to "View Details" button inside popup
+        const popupEl = popup.getElement();
+        const detailBtn = popupEl?.querySelector(`[data-view-details="${props.id}"]`);
+        if (detailBtn && matchedEvent) {
+          detailBtn.addEventListener("click", (evt) => {
+            evt.stopPropagation();
+            onViewDetailsRef.current?.(matchedEvent);
+          });
+        }
       });
 
       map.on("mouseenter", "events-circle", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -269,6 +385,7 @@ export function MapLayer({ events }: MapLayerProps) {
 
     return () => {
       cancelled = true;
+      if (pulseRef.current) cancelAnimationFrame(pulseRef.current);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -283,7 +400,33 @@ export function MapLayer({ events }: MapLayerProps) {
   }, [events, syncMarkers]);
 
   return (
-    <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden"
-      style={{ border: "1px solid var(--border)" }} />
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden"
+        style={{ border: "1px solid var(--border)" }} />
+
+      {/* Map Legend */}
+      <div
+        className="absolute bottom-4 left-4 z-10 rounded-lg p-3 space-y-2"
+        style={{
+          background: "rgba(255,255,255,0.90)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+      >
+        <p className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]" style={{ color: "var(--fg-muted)" }}>Legend</p>
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-50" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+          </span>
+          <span className="text-xs font-medium" style={{ color: "var(--fg-secondary)" }}>Pulse Event (Grievance)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex rounded-full h-3 w-3 shrink-0" style={{ background: "#2563eb" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--fg-secondary)" }}>Field Officer</span>
+        </div>
+      </div>
+    </div>
   );
 }
