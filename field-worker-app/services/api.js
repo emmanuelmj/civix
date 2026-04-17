@@ -3,9 +3,8 @@
  * Connects the mobile app to the Civix-Pulse backend.
  */
 
-// Point to the Codespace backend (fallback to localhost for local dev)
-const BASE_URL =
-  'https://cautious-winner-j9g694vr76jcv57-8000.app.github.dev';
+// Point to local backend
+const BASE_URL = 'http://localhost:8000';
 const LOCAL_URL = 'http://localhost:8000';
 
 let activeBase = BASE_URL;

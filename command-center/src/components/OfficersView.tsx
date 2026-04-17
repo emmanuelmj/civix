@@ -495,8 +495,45 @@ function OfficerModal({
 
 /* ── main view ────────────────────────────────────────────────── */
 
-export function OfficersView({ events }: { events: PulseEvent[] }) {
-  const aggregates = useOfficerAggregates(events);
+export function OfficersView({ events, officers: dbOfficers = [] }: { events: PulseEvent[]; officers?: Officer[] }) {
+  const eventAggregates = useOfficerAggregates(events);
+
+  // Merge DB officers with event-derived officers
+  const aggregates = useMemo(() => {
+    const merged = new Map<string, OfficerAggregate>();
+
+    // Start with DB officers (they are the source of truth)
+    for (const o of dbOfficers) {
+      merged.set(o.officer_id, {
+        officer: o,
+        events: [],
+        activeTasks: 0,
+        resolvedCount: 0,
+        domains: (o.skills || []) as string[],
+      });
+    }
+
+    // Layer on event-derived data
+    for (const agg of eventAggregates) {
+      const id = agg.officer.officer_id;
+      if (merged.has(id)) {
+        const existing = merged.get(id)!;
+        merged.set(id, {
+          ...existing,
+          officer: { ...existing.officer, ...agg.officer },
+          events: agg.events,
+          activeTasks: agg.activeTasks,
+          resolvedCount: agg.resolvedCount,
+          domains: agg.domains.length > 0 ? agg.domains : existing.domains,
+        });
+      } else {
+        merged.set(id, agg);
+      }
+    }
+
+    return Array.from(merged.values());
+  }, [dbOfficers, eventAggregates]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selectedAgg = aggregates.find(

@@ -116,7 +116,7 @@ async def systemic_auditor_node(state: PulseState) -> dict:
 
     try:
         # Try to fetch this event's vector from Pinecone
-        vectors = pc.fetch_vectors([state["event_id"]])
+        vectors = pc.fetch_vectors([state["event_id"]], namespace="civix-events")
 
         if state["event_id"] not in vectors:
             # Event not yet in Pinecone — might be from webhook or trigger-swarm
@@ -134,6 +134,7 @@ async def systemic_auditor_node(state: PulseState) -> dict:
             vector=event_vector,
             top_k=10,
             exclude_id=state["event_id"],
+            namespace="civix-events",
         )
 
         # Filter by threshold
