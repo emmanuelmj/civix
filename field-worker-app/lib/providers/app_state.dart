@@ -7,7 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/grievance.dart';
 
 class AppState extends ChangeNotifier {
-  static const String _defaultApiUrl = 'http://localhost:8000';
+  // 10.0.2.2 is Android emulator's alias for host machine's localhost
+  static const String _defaultApiUrl = 'http://10.0.2.2:8000';
   String _apiUrl = _defaultApiUrl;
   String get apiUrl => _apiUrl;
 
