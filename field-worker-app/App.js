@@ -17,6 +17,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
 import PhoneFrame from './components/PhoneFrame';
+import { healthCheck, updateOfficerLocation, verifyResolution } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const OFFICER_ID   = 'OP-441';
@@ -131,12 +132,36 @@ export default function App() {
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const cameraRef = useRef(null);
 
+  // Backend connectivity
+  const [backendStatus, setBackendStatus] = useState(null); // null | 'ok' | 'offline'
+  const locationTimer = useRef(null);
+
   // ── Auto-advance: Splash → Login ───────────────────────────────────────────
   useEffect(() => {
     if (appState !== 0) return;
+    // Check backend health during splash
+    healthCheck()
+      .then(r => setBackendStatus(r?.status === 'ok' ? 'ok' : 'offline'))
+      .catch(() => setBackendStatus('offline'));
     const t = setTimeout(() => setAppState(1), 2000);
     return () => clearTimeout(t);
   }, [appState]);
+
+  // ── Location pings every 15s while on duty ─────────────────────────────────
+  useEffect(() => {
+    if (hasGoneOnDuty && backendStatus === 'ok') {
+      const sendLocation = () => {
+        // Use mock location (Hyderabad) — in production, use expo-location
+        updateOfficerLocation(OFFICER_ID, 17.4482, 78.3914)
+          .then(r => r?.error && console.warn('[Location] ping failed'))
+          .catch(() => {});
+      };
+      sendLocation();
+      locationTimer.current = setInterval(sendLocation, 15000);
+      return () => clearInterval(locationTimer.current);
+    }
+    return () => { if (locationTimer.current) clearInterval(locationTimer.current); };
+  }, [hasGoneOnDuty, backendStatus]);
 
   // ── Show duty popup when arriving at Dashboard (only if not already on duty) ─
   useEffect(() => {
@@ -183,9 +208,26 @@ export default function App() {
   };
 
   // Shared capture-success handler — called by both the real camera and the web simulator
-  const handleCaptureSuccess = (base64Uri = null) => {
-    setCapturedImage(base64Uri); // null = web placeholder thumbnail
+  const handleCaptureSuccess = async (base64Uri = null) => {
+    setCapturedImage(base64Uri);
     setVerifyPhase('processing');
+
+    // Call backend verification endpoint
+    if (backendStatus === 'ok' && activeTask) {
+      try {
+        const res = await verifyResolution(
+          OFFICER_ID,
+          activeTask.ticketId || activeTask.id,
+          base64Uri,
+          'Resolution verified by field worker'
+        );
+        console.log('[Verify]', res);
+      } catch (err) {
+        console.warn('[Verify] Backend call failed:', err.message);
+      }
+    }
+
+    // Minimum 3s spinner for UX
     setTimeout(() => setVerifyPhase('success'), 3000);
   };
 
@@ -245,8 +287,10 @@ export default function App() {
               </TouchableOpacity>
               <Text style={s.headerTitle}>CIVIX</Text>
               <View style={s.liveRow}>
-                <View style={s.liveDot} />
-                <Text style={s.liveText}>LIVE</Text>
+                <View style={[s.liveDot, backendStatus === 'ok' ? {} : { backgroundColor: backendStatus === 'offline' ? T.danger : '#D1D5DB' }]} />
+                <Text style={[s.liveText, backendStatus === 'ok' ? {} : { color: backendStatus === 'offline' ? T.danger : '#D1D5DB' }]}>
+                  {backendStatus === 'ok' ? 'LIVE' : backendStatus === 'offline' ? 'OFFLINE' : '...'}
+                </Text>
               </View>
             </View>
 
