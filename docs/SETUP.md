@@ -1,23 +1,39 @@
-# Local Setup Guide
+# Setup Guide
 
-> **Project:** Civix-Pulse — Agentic Governance & Grievance Resolution Swarm
-> **Team:** Vertex
+> Local development and Docker deployment instructions for Civix-Pulse.
+
+For the full repository layout see [`REPO_STRUCTURE.md`](./REPO_STRUCTURE.md). For system architecture see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
+---
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Step 1 — Clone the Repository](#step-1--clone-the-repository)
+- [Step 2 — Configure Environment Variables](#step-2--configure-environment-variables)
+- [Step 3 — Build and Start Services](#step-3--build-and-start-services)
+- [Step 4 — Seed the Database](#step-4--seed-the-database)
+- [Step 5 — Verify the Pipeline](#step-5--verify-the-pipeline)
+- [Step 6 — Verify Bhashini Integration (Optional)](#step-6--verify-bhashini-integration-optional)
+- [Service Endpoints](#service-endpoints)
+- [Local Development Without Docker](#local-development-without-docker)
+- [Resource Limits](#resource-limits)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Prerequisites
 
-Ensure the following are installed on your machine before proceeding:
+| Tool | Minimum Version | Purpose | Install |
+|---|---|---|---|
+| **Docker Desktop** | 24.0+ | Container orchestration for all services | [docker.com/get-docker](https://docs.docker.com/get-docker/) |
+| **Docker Compose** | 2.20+ (bundled with Desktop) | Multi-container stack definition | Included with Docker Desktop |
+| **Git** | 2.40+ | Version control | [git-scm.com](https://git-scm.com/) |
+| **Node.js** | 20 LTS | Command-center build & field-worker-app | [nodejs.org](https://nodejs.org/) |
+| **Python** | 3.12+ | Backend local development | [python.org](https://www.python.org/) |
+| **Expo CLI** | 50+ | Field-worker mobile app development | `npm install -g expo-cli` |
 
-| Tool | Minimum Version | Verification Command |
-|---|---|---|
-| **Docker** | 24.0+ | `docker --version` |
-| **Docker Compose** | 2.20+ (V2 plugin) | `docker compose version` |
-| **Git** | 2.40+ | `git --version` |
-| **Node.js** | 20.x LTS (for local frontend dev) | `node --version` |
-| **Python** | 3.12+ (for local backend dev) | `python --version` |
-
-**Hardware profile:** The full stack is optimized to run on a machine with 8GB RAM, 4-core CPU, and 256GB SSD (tested on Dell Vostro 15 3000).
+> **Note:** Node.js, Python, and Expo CLI are only required for local development without Docker. The Docker workflow requires only Docker and Git.
 
 ---
 
@@ -32,203 +48,261 @@ cd civix
 
 ## Step 2 — Configure Environment Variables
 
-Copy the example environment file and fill in your API keys:
+Copy the template and fill in your credentials:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with the following values:
+### Required Variables
 
-```env
-# ─── LLM Providers ───────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...             # Required: Claude Sonnet for agent reasoning
-GOOGLE_AI_API_KEY=AIza...                # Required: Gemini Flash for vision + video
-BHASHINI_API_KEY=...                     # Optional: Hindi STT (fallback: Whisper)
-BHASHINI_USER_ID=...                     # Optional: Bhashini user ID
+| Variable | Description | Example |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Claude Sonnet API key for priority scoring and verification agents | `sk-ant-api03-...` |
+| `GOOGLE_AI_API_KEY` | Gemini Flash API key for lightweight classification tasks | `AIza...` |
+| `PINECONE_API_KEY` | Pinecone vector database API key | `pcsk_...` |
+| `PINECONE_ENVIRONMENT` | Pinecone cloud region | `us-east-1` |
+| `PINECONE_INDEX_NAME` | Name of the Pinecone index for grievance embeddings | `civix-grievances` |
 
-# ─── Database ────────────────────────────────────────────
-POSTGRES_USER=civix
-POSTGRES_PASSWORD=civix_dev_2026
-POSTGRES_DB=civix_pulse
-DATABASE_URL=postgresql+asyncpg://civix:civix_dev_2026@postgres:5432/civix_pulse
+### Database & Cache
 
-# ─── Redis ───────────────────────────────────────────────
-REDIS_URL=redis://redis:6379/0
+| Variable | Description | Example |
+|---|---|---|
+| `POSTGRES_HOST` | PostgreSQL + PostGIS hostname | `postgres` (Docker) / `localhost` (local) |
+| `POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `POSTGRES_DB` | Database name | `civix_pulse` |
+| `POSTGRES_USER` | Database user | `civix` |
+| `POSTGRES_PASSWORD` | Database password | `<strong-password>` |
+| `REDIS_URL` | Redis connection string for pub/sub and caching | `redis://redis:6379/0` |
 
-# ─── MinIO (Object Storage) ─────────────────────────────
-MINIO_ROOT_USER=civix_minio
-MINIO_ROOT_PASSWORD=civix_minio_2026
-MINIO_ENDPOINT=minio:9000
+### Authentication & Security
 
-# ─── JWT Auth ────────────────────────────────────────────
-JWT_SECRET=your-secret-key-change-in-production
-JWT_ALGORITHM=HS256
-JWT_EXPIRY_HOURS=24
+| Variable | Description | Example |
+|---|---|---|
+| `JWT_SECRET` | Secret key for signing JWT tokens | `<random-256-bit-hex>` |
 
-# ─── n8n ─────────────────────────────────────────────────
-N8N_BASIC_AUTH_USER=admin
-N8N_BASIC_AUTH_PASSWORD=civix_n8n_2026
+### Bhashini (Optional — Indic Language Support)
 
-# ─── Application ─────────────────────────────────────────
-ENVIRONMENT=development
-LOG_LEVEL=INFO
-FASTAPI_PORT=8000
-NEXTJS_PORT=3000
-```
+| Variable | Description | Example |
+|---|---|---|
+| `BHASHINI_USER_ID` | Bhashini platform user ID | `user-...` |
+| `BHASHINI_API_KEY` | Bhashini API key for speech-to-text and translation | `bh-...` |
+| `BHASHINI_PIPELINE_ID` | Bhashini pipeline identifier | `pipe-...` |
+
+### Service Configuration
+
+| Variable | Description | Example |
+|---|---|---|
+| `N8N_BASIC_AUTH_USER` | n8n web UI username | `admin` |
+| `N8N_BASIC_AUTH_PASSWORD` | n8n web UI password | `<strong-password>` |
+| `FASTAPI_PORT` | Backend API port | `8000` |
+| `NEXTJS_PORT` | Command-center dashboard port | `3000` |
+
+> **Security:** Never commit `.env` to version control. The `.gitignore` already excludes it.
 
 ---
 
-## Step 3 — Launch the Full Stack
-
-Start all services with a single command:
+## Step 3 — Build and Start Services
 
 ```bash
 docker compose up --build
 ```
 
-First build will take 3–5 minutes (downloading base images, installing dependencies). Subsequent starts take ~15 seconds.
+| Metric | Duration |
+|---|---|
+| First build (cold cache) | ~5 minutes |
+| Subsequent builds (warm cache) | ~15 seconds |
 
-### Service Endpoints
+Docker Compose starts all services in the correct order with health checks. Wait for all services to report `healthy` before proceeding.
 
-Once all containers are healthy:
+Expected console output when ready:
 
-| Service | URL | Purpose |
-|---|---|---|
-| **Dashboard** | [http://localhost:3000](http://localhost:3000) | Next.js 15 frontend |
-| **API Gateway** | [http://localhost:8000](http://localhost:8000) | FastAPI backend |
-| **API Docs (Swagger)** | [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive API documentation |
-| **API Docs (ReDoc)** | [http://localhost:8000/redoc](http://localhost:8000/redoc) | Alternative API documentation |
-| **n8n Workflows** | [http://localhost:5678](http://localhost:5678) | Webhook ingestion workflows |
-| **MinIO Console** | [http://localhost:9001](http://localhost:9001) | Object storage browser |
+```
+✔ Container civix-postgres   Healthy
+✔ Container civix-redis      Healthy
+✔ Container civix-backend    Started
+✔ Container civix-n8n        Started
+✔ Container civix-dashboard  Started
+```
 
-### Verify All Services Are Running
+To run in detached mode:
 
 ```bash
-docker compose ps
-```
-
-Expected output:
-
-```
-NAME              STATUS       PORTS
-civix-nextjs      Up (healthy) 0.0.0.0:3000->3000/tcp
-civix-fastapi     Up (healthy) 0.0.0.0:8000->8000/tcp
-civix-postgres    Up (healthy) 0.0.0.0:5432->5432/tcp
-civix-redis       Up (healthy) 0.0.0.0:6379->6379/tcp
-civix-minio       Up (healthy) 0.0.0.0:9000->9000/tcp, 0.0.0.0:9001->9001/tcp
-civix-n8n         Up (healthy) 0.0.0.0:5678->5678/tcp
+docker compose up --build -d
+docker compose logs -f          # Follow logs in a separate terminal
 ```
 
 ---
 
 ## Step 4 — Seed the Database
 
-Load the 60 pre-built realistic complaints, officer roster, and ward data:
+Populate the spatial database with 20 dummy field officers (with randomised PostGIS coordinates):
 
 ```bash
-docker compose exec fastapi python scripts/seed_db.py
+docker compose exec backend python -m database.seed
 ```
 
-This populates:
-- 60 complaints with Bangalore ward coordinates, timestamps, and natural clusters.
-- 10 field officers across water, roads, electricity, and sanitation departments.
-- Ward boundary data for geo-filtering.
+Expected output:
 
-### Pre-compute Embeddings
-
-Generate vector embeddings for all seeded complaints (required for clustering and duplicate detection):
-
-```bash
-docker compose exec fastapi python scripts/generate_embeddings.py
 ```
+Seeded 20 field officers into the spatial database.
+```
+
+This creates officer records with GPS positions, department assignments, and availability status. The spatial agent uses these records to match grievances to the nearest available officer.
 
 ---
 
-## Step 5 — Verify the Agent Pipeline
+## Step 5 — Verify the Pipeline
 
-Test the end-to-end agent pipeline with a sample complaint:
+Send a test grievance through the full analysis pipeline:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/complaints \
+curl -X POST http://localhost:8000/api/v1/trigger-analysis \
   -H "Content-Type: application/json" \
   -d '{
-    "source": "web",
-    "text": "Water pressure is very low since 3 days in Jayanagar 4th block",
-    "location": {"lat": 12.9250, "lng": 77.5938},
-    "language": "en"
+    "text": "Water supply has been disrupted for 3 days in Sector 14, Gurugram. Multiple households affected.",
+    "source": "web_form",
+    "location": {
+      "lat": 28.4595,
+      "lng": 77.0266
+    }
   }'
 ```
 
-Expected response:
+A successful response indicates the swarm pipeline executed end-to-end:
 
 ```json
 {
-  "complaint_id": "GRV-2026-00061",
-  "status": "ingesting",
-  "message": "Complaint received. Agent pipeline initiated."
+  "event_id": "evt_...",
+  "status": "dispatched",
+  "priority_score": 8.5,
+  "cluster_id": "cls_...",
+  "assigned_officer": {
+    "id": "ofc_...",
+    "name": "Officer Name",
+    "distance_km": 2.3
+  },
+  "trace": [
+    { "agent": "cluster_agent", "duration_ms": 320 },
+    { "agent": "priority_agent", "duration_ms": 580 },
+    { "agent": "spatial_agent", "duration_ms": 150 }
+  ]
 }
 ```
 
-Check the agent pipeline status:
+---
+
+## Step 6 — Verify Bhashini Integration (Optional)
+
+If you configured the Bhashini environment variables, test Indic language processing:
 
 ```bash
-curl http://localhost:8000/api/v1/agents/status
+curl -X POST http://localhost:8000/api/v1/trigger-analysis \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "पिछले 3 दिनों से सेक्टर 14 में पानी की सप्लाई बंद है।",
+    "source": "whatsapp",
+    "language": "hi",
+    "location": {
+      "lat": 28.4595,
+      "lng": 77.0266
+    }
+  }'
 ```
+
+The pipeline will auto-detect Hindi, translate via Bhashini, then proceed through the standard analysis flow. The response includes the translated text alongside the original.
 
 ---
 
-## Step 6 — Verify Bhashini (Optional)
+## Service Endpoints
 
-If you have Bhashini API access configured:
+Once all containers are running, the following endpoints are available:
 
-```bash
-docker compose exec fastapi python scripts/test_bhashini.py
-```
-
-This sends a test Hindi audio clip and verifies transcription + translation.
+| Service | URL | Description |
+|---|---|---|
+| **Command Center** | [http://localhost:3000](http://localhost:3000) | Enterprise dashboard — real-time monitoring |
+| **Backend API** | [http://localhost:8000](http://localhost:8000) | FastAPI REST API |
+| **API Documentation** | [http://localhost:8000/docs](http://localhost:8000/docs) | Interactive Swagger UI (auto-generated) |
+| **API Redoc** | [http://localhost:8000/redoc](http://localhost:8000/redoc) | Alternative API documentation |
+| **n8n Workflows** | [http://localhost:5678](http://localhost:5678) | n8n workflow editor (ingestion pipelines) |
+| **WebSocket** | `ws://localhost:8000/ws` | Real-time event stream |
 
 ---
 
-## Local Development (Without Docker)
+## Local Development Without Docker
 
-For faster iteration during development, you can run the frontend and backend natively:
+For faster iteration on individual modules, run services directly on your machine.
 
-### Backend
+### Backend (Dev 1)
 
 ```bash
 cd backend
 
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate        # Linux/Mac
+source .venv/bin/activate        # Linux/macOS
 .venv\Scripts\activate           # Windows
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run FastAPI with hot reload
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Start the development server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-> Note: PostgreSQL, Redis, and MinIO still need to run via Docker:
+> **Prerequisite:** PostgreSQL + PostGIS and Redis must be running locally or via Docker:
 > ```bash
-> docker compose up postgres redis minio -d
+> docker compose up postgres redis -d
 > ```
 
-### Frontend
+### Command Center (Dev 3)
 
 ```bash
-cd frontend
+cd command-center
 
-# Install dependencies
 npm install
-
-# Run Next.js dev server
 npm run dev
 ```
 
-Dashboard available at [http://localhost:3000](http://localhost:3000).
+The dashboard starts at [http://localhost:3000](http://localhost:3000) with hot module replacement enabled.
+
+### Field Worker App (Dev 4)
+
+```bash
+cd field-worker-app
+
+npm install
+npx expo start
+```
+
+Scan the QR code with Expo Go on a physical device, or press `w` to open the web preview. For Android emulator, press `a`; for iOS simulator, press `i`.
+
+### n8n Workflows (Dev 2)
+
+For local n8n development, start the n8n container in isolation:
+
+```bash
+docker compose up n8n -d
+```
+
+Access the workflow editor at [http://localhost:5678](http://localhost:5678) and import workflows from `omnichannel-intake/n8n-workflows/`.
+
+---
+
+## Resource Limits
+
+The system is optimised to run on constrained hardware (Dell Vostro 15 3000: 8 GB RAM, 4-core CPU, 256 GB SSD). The Docker Compose file enforces the following per-container limits to keep total footprint under **~5 GB RAM**:
+
+| Container | RAM Limit | CPU Limit | Notes |
+|---|---|---|---|
+| `civix-postgres` | 1024 MB | 1.0 core | PostGIS + spatial indexes |
+| `civix-redis` | 256 MB | 0.5 core | Pub/sub + ephemeral cache |
+| `civix-backend` | 1536 MB | 1.5 cores | FastAPI + swarm agents (LLM calls are external) |
+| `civix-n8n` | 512 MB | 0.5 core | Workflow engine |
+| `civix-dashboard` | 512 MB | 0.5 core | Next.js SSR |
+| **Total** | **~3.8 GB** | **4.0 cores** | Leaves ~1.2 GB headroom for OS + Docker daemon |
+
+> **Tip:** If you experience out-of-memory errors, stop unused containers with `docker compose stop <service>` and run only the modules you are actively developing.
 
 ---
 
@@ -236,64 +310,75 @@ Dashboard available at [http://localhost:3000](http://localhost:3000).
 
 ### Port Conflicts
 
-If a port is already in use:
+If a port is already in use, identify and stop the conflicting process:
 
 ```bash
-# Find the process using the port (example: port 8000)
-# Linux/Mac:
+# Linux / macOS
 lsof -i :8000
-# Windows:
+kill -9 <PID>
+
+# Windows
 netstat -ano | findstr :8000
-
-# Kill the process or change the port in .env
+taskkill /PID <PID> /F
 ```
 
-### Docker Memory Issues
-
-If containers are killed due to OOM on an 8GB machine:
+Alternatively, change the port in `.env` (e.g. `FASTAPI_PORT=8001`) and restart:
 
 ```bash
-# Check container resource usage
-docker stats
-
-# Reduce memory limits in docker-compose.yml if needed
-# The default configuration targets ~5GB total for all services
+docker compose down && docker compose up --build -d
 ```
 
-### Database Connection Errors
+### Docker Memory Errors
+
+If containers are killed with `OOMKilled`:
+
+1. Increase Docker Desktop memory allocation: **Settings → Resources → Memory → 6 GB minimum**.
+2. Prune unused images and volumes:
+   ```bash
+   docker system prune -af
+   docker volume prune -f
+   ```
+
+### Database Connection Refused
+
+If the backend cannot connect to PostgreSQL:
+
+1. Verify the database container is healthy:
+   ```bash
+   docker compose ps postgres
+   ```
+2. Ensure `POSTGRES_HOST` in `.env` matches the Docker service name (`postgres` inside Docker, `localhost` outside).
+3. Check that the database has been initialised:
+   ```bash
+   docker compose exec postgres psql -U civix -d civix_pulse -c "\dt"
+   ```
+
+### Redis Connection Refused
+
+Verify Redis is running and reachable:
 
 ```bash
-# Verify PostgreSQL is accepting connections
-docker compose exec postgres pg_isready -U civix
-
-# Check PostgreSQL logs
-docker compose logs postgres --tail 50
+docker compose exec redis redis-cli ping
+# Expected: PONG
 ```
 
-### Resetting Everything
+### Full Reset
 
-To wipe all data and start fresh:
+To tear down all containers, volumes, and rebuild from scratch:
 
 ```bash
-docker compose down -v          # Remove containers + volumes
-docker compose up --build       # Rebuild and start
+docker compose down -v          # Remove containers + volumes (deletes all data)
+docker compose up --build       # Fresh build
 ```
 
----
+Then re-run [Step 4 — Seed the Database](#step-4--seed-the-database).
 
-## Resource Limits (Docker Compose)
+### n8n Workflow Import Fails
 
-These limits ensure the full stack fits within 8GB RAM:
+If n8n cannot import workflow JSON files:
 
-| Service | Memory Limit | CPU Limit |
-|---|---|---|
-| PostgreSQL + pgvector | 1.5 GB | 1 core |
-| Redis | 256 MB | 0.25 core |
-| MinIO | 256 MB | 0.25 core |
-| FastAPI + LangGraph | 2 GB | 1.5 cores |
-| Next.js | 512 MB | 0.5 core |
-| n8n | 512 MB | 0.5 core |
-| **Total** | **~5 GB** | **4 cores** |
+1. Ensure the n8n container has access to the `omnichannel-intake/n8n-workflows/` directory (check volume mounts in `docker-compose.yml`).
+2. Manually import via the n8n UI: **Settings → Import from File → select JSON**.
 
 ---
 
@@ -301,17 +386,8 @@ These limits ensure the full stack fits within 8GB RAM:
 
 Once the stack is running:
 
-1. Open the **Dashboard** at [http://localhost:3000](http://localhost:3000).
-2. Explore the **Agent Canvas** to see the swarm status.
-3. Submit a test complaint via the **Web Portal** or the **API**.
-4. Open the **Knowledge Graph** to see complaint clustering.
-5. Check the **API Docs** at [http://localhost:8000/docs](http://localhost:8000/docs) for all available endpoints.
-
----
-
-## References
-
-- [Architecture](ARCHITECTURE.md) — Service topology and container network.
-- [Repo Structure](REPO_STRUCTURE.md) — Directory layout explanation.
-- [API Spec](API_SPEC.md) — Endpoint contracts for testing.
-- [TRD](TRD.md) — Hardware optimization details.
+1. Open the [Command Center](http://localhost:3000) to view the dashboard.
+2. Send test grievances via the [API Docs](http://localhost:8000/docs) or the `curl` command in Step 5.
+3. Open the [n8n Editor](http://localhost:5678) to inspect and modify ingestion workflows.
+4. Review the [`API_SPEC.md`](./API_SPEC.md) for the full endpoint contract.
+5. Read [`AGENT_SWARM.md`](./AGENT_SWARM.md) for details on the multi-agent pipeline design.

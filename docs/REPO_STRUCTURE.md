@@ -1,224 +1,256 @@
 # Repository Structure
 
-> **Project:** Civix-Pulse — Agentic Governance & Grievance Resolution Swarm
-> **Team:** Vertex
+> Civix-Pulse monorepo layout — a multi-agent AI swarm for civic grievance resolution.
+
+This document describes the complete directory tree, per-developer ownership boundaries, and the rationale behind key architectural decisions. For setup instructions see [`SETUP.md`](./SETUP.md). For the full system architecture see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ---
 
-## Overview
+## Table of Contents
 
-The repository follows a **monorepo layout** with clear separation between frontend, backend, agent logic, and infrastructure configuration. Every directory has a single responsibility.
+- [Directory Tree](#directory-tree)
+- [Module Overview](#module-overview)
+- [Key Design Decisions](#key-design-decisions)
+- [Developer Ownership Boundaries](#developer-ownership-boundaries)
+- [Related Documentation](#related-documentation)
 
 ---
 
 ## Directory Tree
 
 ```
-civix/
-├── README.md                          # Project overview and quick start
-├── LICENSE                            # MIT License
-├── AGENTS.md                          # Agent context document
-├── docker-compose.yml                 # Full-stack orchestration
-├── .env.example                       # Environment variable template
-├── .gitignore
+civix-pulse/
 │
-├── docs/                              # Documentation suite
-│   ├── features.md                    # Tier-wise feature roadmap
-│   ├── PRD.md                         # Product Requirements Document
-│   ├── TRD.md                         # Technical Requirements Document
-│   ├── TECHSTACK.md                   # Technology selection rationale
-│   ├── ARCHITECTURE.md                # System design + Mermaid diagrams
-│   ├── AGENT_SWARM.md                 # LangGraph node specifications
-│   ├── API_SPEC.md                    # FastAPI endpoint contracts
-│   ├── REPO_STRUCTURE.md              # This file
-│   └── SETUP.md                       # Local execution guide
+├── README.md                             # Project overview, quickstart, and demo links
+├── LICENSE                               # MIT license
+├── AGENTS.md                             # AI coding-agent context (role, stack, rules)
+├── docker-compose.yml                    # Full-stack orchestration (all 4 services + infra)
+├── .env.example                          # Template for all required environment variables
+├── .gitignore                            # Standard ignores for Python, Node, Docker, IDE
 │
-├── backend/                           # Python backend (FastAPI + LangGraph)
-│   ├── Dockerfile                     # Backend container image
-│   ├── pyproject.toml                 # Python dependencies (uv/pip)
-│   ├── requirements.txt              # Pinned dependencies
+├── docs/                                 # Project documentation
+│   ├── features.md                       # User-facing feature catalogue
+│   ├── PRD.md                            # Product Requirements Document
+│   ├── TRD.md                            # Technical Requirements Document
+│   ├── TECHSTACK.md                      # Technology choices with justifications
+│   ├── ARCHITECTURE.md                   # System architecture & data-flow diagrams
+│   ├── AGENT_SWARM.md                    # Multi-agent pipeline design & prompts
+│   ├── API_SPEC.md                       # REST & WebSocket API contract
+│   ├── REPO_STRUCTURE.md                 # ← You are here
+│   └── SETUP.md                          # Local development & Docker setup guide
+│
+├── backend/                              # Dev 1 (Lead) — Central Brain & Dispatch Engine
+│   ├── Dockerfile                        # Python 3.12-slim, multi-stage build
+│   ├── requirements.txt                  # Pinned Python dependencies
+│   ├── main.py                           # FastAPI app factory, CORS, lifespan hooks
+│   ├── config.py                         # pydantic-settings: typed env var loading
 │   │
-│   ├── app/                           # FastAPI application
+│   ├── api/                              # HTTP & WebSocket route handlers
 │   │   ├── __init__.py
-│   │   ├── main.py                    # App factory, middleware, lifespan
-│   │   ├── config.py                  # Settings via pydantic-settings
-│   │   │
-│   │   ├── api/                       # API route handlers
-│   │   │   ├── __init__.py
-│   │   │   ├── complaints.py          # /complaints CRUD + pipeline trigger
-│   │   │   ├── agents.py             # /agents status + traces
-│   │   │   ├── clusters.py           # /clusters endpoints
-│   │   │   ├── graph.py              # /graph knowledge graph data
-│   │   │   ├── verification.py       # /complaints/{id}/verify
-│   │   │   ├── reports.py            # /reports executive summary
-│   │   │   ├── auth.py               # /auth login + JWT
-│   │   │   └── websocket.py          # /ws/dashboard real-time stream
-│   │   │
-│   │   ├── models/                    # Pydantic schemas + SQLAlchemy models
-│   │   │   ├── __init__.py
-│   │   │   ├── complaint.py           # Complaint schema (request/response/DB)
-│   │   │   ├── agent_trace.py         # Agent trace schema
-│   │   │   ├── cluster.py             # Cluster schema
-│   │   │   ├── user.py                # User + Officer schema
-│   │   │   └── graph.py               # Knowledge graph node/edge schema
-│   │   │
-│   │   ├── services/                  # Business logic (non-agent)
-│   │   │   ├── __init__.py
-│   │   │   ├── complaint_service.py   # Complaint CRUD operations
-│   │   │   ├── auth_service.py        # JWT generation + validation
-│   │   │   ├── storage_service.py     # MinIO file upload/download
-│   │   │   └── report_service.py      # Executive report generation
-│   │   │
-│   │   └── db/                        # Database setup
-│   │       ├── __init__.py
-│   │       ├── session.py             # SQLAlchemy async session factory
-│   │       └── migrations/            # Alembic migrations
+│   │   ├── analysis.py                   # POST /api/v1/trigger-analysis — pipeline entry
+│   │   ├── officers.py                   # Officer CRUD, location updates, verification
+│   │   ├── events.py                     # GET /api/v1/events, /events/{id}
+│   │   ├── clusters.py                   # GET /api/v1/clusters — systemic patterns
+│   │   ├── graph.py                      # GET /api/v1/graph — knowledge graph payload
+│   │   ├── dashboard.py                  # GET /api/v1/dashboard/stats — KPIs
+│   │   └── websocket.py                  # WebSocket connection manager (broadcast)
 │   │
-│   ├── agents/                        # LangGraph agent nodes (SEPARATED from API)
+│   ├── swarm_logic/                      # Agent intelligence — separated from API layer
 │   │   ├── __init__.py
-│   │   ├── graph.py                   # StateGraph definition + edge routing
-│   │   ├── state.py                   # GrievanceState TypedDict
-│   │   ├── ingestion.py               # Ingestion Agent node
-│   │   ├── priority.py                # Priority Agent node
-│   │   ├── auditor.py                 # Systemic Auditor node
-│   │   ├── resolution.py             # Resolution Agent node
-│   │   ├── verification.py           # Verification Agent node
-│   │   └── utils/                     # Shared agent utilities
-│   │       ├── __init__.py
-│   │       ├── embeddings.py          # Embedding generation
-│   │       ├── clustering.py          # DBSCAN clustering logic
-│   │       ├── llm.py                 # LLM client wrappers
-│   │       └── trace.py               # Agent trace emission
+│   │   ├── pipeline.py                   # Sequential orchestrator: ingest → cluster →
+│   │   │                                 #   prioritise → dispatch → verify
+│   │   ├── cluster_agent.py              # Pinecone similarity search + DBSCAN clustering
+│   │   ├── priority_agent.py             # LangChain impact-matrix scoring
+│   │   ├── spatial_agent.py              # PostGIS nearest-officer matching
+│   │   ├── verification_agent.py         # Vision AI resolution verification
+│   │   └── prompts/                      # Externalised LLM system prompts
+│   │       ├── priority_prompt.txt       # City Planner persona for priority scoring
+│   │       └── verification_prompt.txt   # Vision analyst persona for photo checks
 │   │
-│   ├── mock_portal/                   # Mock BWSSB portal (Flask)
-│   │   ├── Dockerfile
-│   │   ├── app.py                     # Simple form: 4 fields + submit
-│   │   └── templates/
-│   │       └── index.html             # Government-styled form page
+│   ├── database/                         # Data access layer
+│   │   ├── __init__.py
+│   │   ├── models.py                     # SQLAlchemy + GeoAlchemy2 ORM models
+│   │   ├── session.py                    # Async session factory (asyncpg)
+│   │   └── seed.py                       # Seed script: 20 dummy field officers
 │   │
-│   └── tests/                         # Backend test suite
-│       ├── conftest.py
-│       ├── test_api/
-│       ├── test_agents/
-│       └── test_services/
+│   ├── services/                         # Shared infrastructure clients
+│   │   ├── __init__.py
+│   │   ├── pinecone_client.py            # Pinecone SDK wrapper (upsert, query)
+│   │   ├── redis_client.py               # Redis pub/sub for real-time events
+│   │   └── storage.py                    # File storage abstraction (local / S3)
+│   │
+│   └── tests/                            # Backend test suite
+│       ├── conftest.py                   # Fixtures: test DB, async client
+│       ├── test_analysis.py              # Integration tests for analysis pipeline
+│       ├── test_officers.py              # Officer endpoint tests
+│       └── test_swarm/                   # Unit tests for individual agents
 │
-├── frontend/                          # Next.js 15 dashboard
-│   ├── Dockerfile                     # Frontend container image
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── tailwind.config.ts             # Design system tokens
-│   ├── next.config.ts
-│   │
-│   ├── public/                        # Static assets
-│   │   └── fonts/
-│   │
+├── omnichannel-intake/                   # Dev 2 — Multimodal Ingestion Layer
+│   ├── n8n-workflows/                    # n8n workflow definitions (importable JSON)
+│   │   ├── whatsapp-intake.json          # WhatsApp voice/text → transcribe → embed → Pinecone
+│   │   ├── web-intake.json               # Web form submission processing
+│   │   └── ocr-intake.json              # Scanned/handwritten letter OCR pipeline
+│   └── prompts/                          # LLM prompts used within n8n nodes
+│       ├── classification_prompt.txt     # Complaint categorisation (water, road, etc.)
+│       └── extraction_prompt.txt         # Named-entity extraction (location, dates)
+│
+├── command-center/                       # Dev 3 — Operational Dashboard
+│   ├── Dockerfile                        # Node 20-alpine, multi-stage build
+│   ├── package.json                      # Dependencies & scripts
+│   ├── tsconfig.json                     # Strict TypeScript config
+│   ├── tailwind.config.ts                # Monochromatic design tokens
+│   ├── next.config.ts                    # Next.js 15 configuration
+│   ├── public/                           # Static assets (favicon, icons)
 │   ├── src/
-│   │   ├── app/                       # Next.js App Router pages
-│   │   │   ├── layout.tsx             # Root layout + providers
-│   │   │   ├── page.tsx               # Dashboard home
-│   │   │   ├── complaints/
-│   │   │   │   ├── page.tsx           # Complaint list
-│   │   │   │   └── [id]/
-│   │   │   │       └── page.tsx       # Complaint detail + traces
-│   │   │   ├── graph/
-│   │   │   │   └── page.tsx           # Knowledge Graph view
-│   │   │   ├── map/
-│   │   │   │   └── page.tsx           # Hotspot heatmap
-│   │   │   ├── agents/
-│   │   │   │   └── page.tsx           # Agent Canvas
-│   │   │   └── reports/
-│   │   │       └── page.tsx           # Executive reports
-│   │   │
-│   │   ├── components/                # Reusable UI components
-│   │   │   ├── ui/                    # shadcn/ui primitives
-│   │   │   ├── agent-canvas.tsx       # Real-time agent orchestration view
-│   │   │   ├── knowledge-graph.tsx    # Cytoscape.js graph renderer
-│   │   │   ├── hotspot-map.tsx        # Leaflet heatmap
-│   │   │   ├── complaint-card.tsx     # Complaint summary card
-│   │   │   ├── priority-badge.tsx     # Color-coded priority indicator
-│   │   │   ├── trace-panel.tsx        # Agent reasoning trace viewer
-│   │   │   └── session-replay.tsx     # Playwright session video player
-│   │   │
-│   │   ├── hooks/                     # Custom React hooks
-│   │   │   ├── use-websocket.ts       # WebSocket connection + reconnect
-│   │   │   └── use-complaints.ts      # Complaint data fetching
-│   │   │
-│   │   ├── lib/                       # Utilities
-│   │   │   ├── api.ts                 # API client (fetch wrapper)
-│   │   │   ├── utils.ts               # shadcn/ui cn() helper
-│   │   │   └── constants.ts           # Design tokens, API URLs
-│   │   │
-│   │   ├── store/                     # State management
-│   │   │   └── agent-store.ts         # Zustand store for real-time agent state
-│   │   │
-│   │   └── types/                     # TypeScript interfaces
-│   │       ├── complaint.ts
-│   │       ├── agent.ts
-│   │       ├── cluster.ts
-│   │       └── graph.ts
-│   │
-│   └── tests/                         # Frontend tests
-│       └── components/
+│   │   ├── app/                          # Next.js App Router pages
+│   │   │   ├── layout.tsx                # Root layout: fonts, providers, sidebar
+│   │   │   ├── page.tsx                  # Dashboard home — KPI cards, live feed
+│   │   │   ├── events/
+│   │   │   │   ├── page.tsx              # Grievance event list (filterable table)
+│   │   │   │   └── [id]/page.tsx         # Event detail: timeline, agent trace, map
+│   │   │   ├── graph/page.tsx            # Knowledge graph — Cytoscape.js canvas
+│   │   │   ├── map/page.tsx              # Spatial hotspot map — Leaflet overlay
+│   │   │   └── agents/page.tsx           # Agent pipeline canvas — live status
+│   │   ├── components/
+│   │   │   ├── ui/                       # shadcn/ui primitives (Button, Card, Badge…)
+│   │   │   ├── map-layer.tsx             # Leaflet map with officer position dots
+│   │   │   ├── ingestion-feed.tsx        # Live complaint feed (WebSocket-driven)
+│   │   │   ├── swarm-log.tsx             # Agent reasoning trace viewer
+│   │   │   ├── agent-canvas.tsx          # Pipeline stage visualisation
+│   │   │   ├── knowledge-graph.tsx       # Cytoscape.js interactive graph
+│   │   │   └── dispatch-card.tsx         # Officer dispatch assignment card
+│   │   ├── lib/
+│   │   │   ├── api.ts                    # Typed fetch wrapper for backend API
+│   │   │   ├── websocket.ts              # WebSocket connection & reconnect logic
+│   │   │   └── utils.ts                  # cn() helper (clsx + tailwind-merge)
+│   │   ├── store/
+│   │   │   └── pulse-store.ts            # Zustand global state (events, agents, UI)
+│   │   └── types/
+│   │       ├── event.ts                  # GrievanceEvent, EventStatus interfaces
+│   │       ├── officer.ts                # FieldOfficer, Location interfaces
+│   │       └── graph.ts                  # GraphNode, GraphEdge interfaces
+│   └── tests/                            # Frontend test suite
 │
-├── n8n/                               # n8n workflow configurations
-│   └── workflows/                     # Exported JSON workflow definitions
-│       ├── whatsapp-intake.json
-│       └── email-intake.json
-│
-├── data/                              # Seed data + test fixtures
-│   ├── seed_complaints.json           # 60 realistic Bangalore complaints
-│   ├── seed_officers.json             # Ward officers with departments
-│   ├── policy_docs/                   # PDFs for RAG engine
-│   │   ├── karnataka-rts-act.pdf
-│   │   ├── rti-act.pdf
-│   │   └── bwssb-sla-guidelines.pdf
-│   └── audio/                         # Hindi voice complaint samples
-│       ├── complaint-hindi-01.wav
-│       └── complaint-hindi-02.wav
-│
-├── scripts/                           # Utility scripts
-│   ├── seed_db.py                     # Load seed data into PostgreSQL
-│   ├── generate_embeddings.py         # Pre-compute embeddings for seed data
-│   └── test_bhashini.py               # Verify Bhashini API connectivity
-│
-└── infra/                             # Infrastructure configs
-    ├── postgres/
-    │   └── init.sql                   # Schema + pgvector extension setup
-    ├── redis/
-    │   └── redis.conf                 # Memory limit configuration
-    └── minio/
-        └── init.sh                    # Create default buckets
+└── field-worker-app/                     # Dev 4 — Field Officer Mobile App
+    ├── Dockerfile                        # Expo web build for containerised preview
+    ├── package.json                      # Expo + React Native dependencies
+    ├── app.json                          # Expo project configuration
+    ├── App.js                            # Expo entry point & navigation setup
+    ├── components/
+    │   ├── ActiveTaskCard.js             # Current assignment display card
+    │   ├── CameraScreen.js               # Photo capture for resolution verification
+    │   └── NavigationView.js             # Turn-by-turn route to event location
+    ├── services/
+    │   ├── geolocation.js                # GPS tracking (5-second interval broadcast)
+    │   ├── websocket.js                  # WebSocket sync with backend dispatch
+    │   └── api.js                        # REST API client for task management
+    └── screens/
+        ├── HomeScreen.js                 # Task queue & officer status overview
+        ├── TaskDetailScreen.js           # Full task context, map, priority badge
+        └── VerificationScreen.js         # Photo upload & resolution confirmation
 ```
+
+---
+
+## Module Overview
+
+| Module | Owner | Runtime | Purpose |
+|---|---|---|---|
+| `backend/` | Dev 1 (Lead) | Python 3.12 / FastAPI | Central API, swarm orchestration, spatial dispatch |
+| `omnichannel-intake/` | Dev 2 | n8n (Node.js) | Multimodal ingestion — WhatsApp, web forms, scanned letters |
+| `command-center/` | Dev 3 | Next.js 15 | Enterprise dashboard — real-time monitoring & analytics |
+| `field-worker-app/` | Dev 4 | Expo (React Native) | Mobile app — task management, GPS tracking, photo verification |
+
+Infrastructure services (PostgreSQL + PostGIS, Redis, Pinecone) are defined in `docker-compose.yml` and shared across all modules.
 
 ---
 
 ## Key Design Decisions
 
-### Agents Separated from API
+### 1. `swarm_logic/` Is Separated from `api/`
 
-The `backend/agents/` directory is **deliberately separate** from `backend/app/api/`. LangGraph node logic never imports FastAPI constructs. This ensures:
+The agent intelligence layer (`swarm_logic/`) is intentionally decoupled from the HTTP route handlers (`api/`). This separation provides three benefits:
 
-- Agent nodes can be tested in isolation without spinning up an HTTP server.
-- The agent graph can be reused in CLI tools, notebooks, or batch jobs.
-- Clear ownership boundaries for parallel development.
+- **Testability** — Agent logic can be unit-tested in isolation without spinning up a FastAPI server or database.
+- **Reusability** — The same pipeline can be invoked from REST endpoints, WebSocket handlers, background workers, or CLI scripts.
+- **Clarity of ownership** — The `api/` layer owns request validation, serialisation, and auth; `swarm_logic/` owns reasoning, scoring, and dispatch decisions. Neither reaches into the other's domain.
 
-### Frontend Component Architecture
+This mirrors the clean-architecture principle of separating use cases from delivery mechanisms. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full data-flow diagram.
 
-Components are organized by function, not by page:
+### 2. Prompts Are Stored as `.txt` Files
 
-- `components/ui/` — shadcn/ui primitives (buttons, cards, badges). Never modified.
-- `components/*.tsx` — Domain-specific components (agent-canvas, knowledge-graph). Composed from ui primitives.
-- `hooks/` — Data fetching and WebSocket logic extracted from components.
-- `store/` — Zustand stores for real-time state shared across components.
+LLM system prompts are externalised into plain `.txt` files under `swarm_logic/prompts/` and `omnichannel-intake/prompts/` rather than being inlined as Python/JavaScript string literals.
 
-### Data Directory
+- **Iteration speed** — Prompt engineers can edit prompts without touching application code or triggering a rebuild.
+- **Version control** — Prompt diffs are human-readable in PRs; reviewers can evaluate prompt changes independently of logic changes.
+- **Runtime hot-reload** — In development, prompts can be reloaded from disk without restarting the server, enabling rapid experimentation.
+- **LLM-agnostic** — The same prompt file can be loaded by any orchestration framework (LangChain, n8n AI nodes, direct SDK calls).
 
-All seed data, test fixtures, and demo assets live in `data/`. This directory is `.gitignore`-excluded for large binary files (audio clips) but JSON seeds are committed.
+### 3. Command Center Uses Next.js App Router
+
+The `command-center/` dashboard is built on Next.js 15 with the App Router (not Pages Router) for the following reasons:
+
+- **Nested layouts** — The dashboard requires a persistent sidebar and header across all pages; App Router's `layout.tsx` convention eliminates layout prop-drilling.
+- **Server Components** — Initial dashboard data (KPIs, event lists) can be server-rendered for faster First Contentful Paint, while interactive panels (live feed, map) remain Client Components.
+- **Streaming** — The `loading.tsx` convention enables progressive rendering of data-heavy pages (event detail, knowledge graph) without custom skeleton logic.
+- **Colocation** — Route-level `page.tsx`, `layout.tsx`, and `loading.tsx` files keep concerns scoped to their route segment, reducing cross-page coupling.
+
+### 4. Field Worker App Uses Expo (React Native)
+
+The field officer mobile application is built with Expo rather than a PWA or native platform SDK:
+
+- **Cross-platform from day one** — A single JavaScript codebase produces Android, iOS, and web builds, critical for a 48-hour hackathon timeline.
+- **Native device APIs** — Expo provides managed access to camera, GPS, and push notifications without native module configuration.
+- **Development speed** — Expo Go enables instant preview on physical devices via QR code, eliminating the compile-deploy cycle during rapid iteration.
+- **Web fallback** — `expo export:web` produces a static web build that can be containerised (see `field-worker-app/Dockerfile`) for demo purposes when physical devices are unavailable.
 
 ---
 
-## References
+## Developer Ownership Boundaries
 
-- [Architecture](ARCHITECTURE.md) — How services connect.
-- [Tech Stack](TECHSTACK.md) — Why each technology was chosen.
-- [Setup](SETUP.md) — How to run the stack locally.
+```
+┌──────────────────────────────────────────────────────────────┐
+│                       docker-compose.yml                     │
+│                       .env.example                           │
+│                       docs/                                  │
+│                          Shared — all developers             │
+└──────────────────────────────────────────────────────────────┘
+
+┌─────────────────┐  ┌──────────────────┐  ┌─────────────────┐  ┌──────────────────┐
+│   Dev 1 (Lead)  │  │      Dev 2       │  │      Dev 3      │  │      Dev 4       │
+│                 │  │                  │  │                 │  │                  │
+│   backend/      │  │ omnichannel-     │  │ command-center/ │  │ field-worker-    │
+│   ├── api/      │  │  intake/         │  │ ├── src/app/    │  │  app/            │
+│   ├── swarm_    │  │ ├── n8n-         │  │ ├── src/        │  │ ├── screens/     │
+│   │   logic/    │  │ │   workflows/   │  │ │   components/ │  │ ├── components/  │
+│   ├── database/ │  │ └── prompts/     │  │ ├── src/lib/    │  │ └── services/    │
+│   ├── services/ │  │                  │  │ ├── src/store/  │  │                  │
+│   └── tests/    │  │                  │  │ └── src/types/  │  │                  │
+└─────────────────┘  └──────────────────┘  └─────────────────┘  └──────────────────┘
+```
+
+**Contracts between modules:**
+
+| Producer | Consumer | Contract |
+|---|---|---|
+| Dev 2 (`omnichannel-intake`) | Dev 1 (`backend`) | n8n webhook → `POST /api/v1/trigger-analysis` with standardised JSON payload |
+| Dev 1 (`backend`) | Dev 3 (`command-center`) | REST API (`/api/v1/*`) + WebSocket events — see [`API_SPEC.md`](./API_SPEC.md) |
+| Dev 1 (`backend`) | Dev 4 (`field-worker-app`) | REST API + WebSocket dispatch events |
+| Dev 4 (`field-worker-app`) | Dev 1 (`backend`) | GPS location broadcasts + verification photo uploads |
+
+Each developer can build and test their module independently. Cross-module integration is validated via `docker compose up` which starts all services simultaneously.
+
+---
+
+## Related Documentation
+
+| Document | Description |
+|---|---|
+| [`features.md`](./features.md) | User-facing feature catalogue |
+| [`PRD.md`](./PRD.md) | Product Requirements Document |
+| [`TRD.md`](./TRD.md) | Technical Requirements Document |
+| [`TECHSTACK.md`](./TECHSTACK.md) | Technology choices & justifications |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | System architecture & data-flow diagrams |
+| [`AGENT_SWARM.md`](./AGENT_SWARM.md) | Multi-agent pipeline design |
+| [`API_SPEC.md`](./API_SPEC.md) | REST & WebSocket API contract |
+| [`SETUP.md`](./SETUP.md) | Local development & Docker setup guide |
