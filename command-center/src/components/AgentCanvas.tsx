@@ -1,256 +1,202 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
 import type { PulseEvent, SwarmLogEntry } from "@/lib/types";
 
-// Pipeline node definitions matching backend's graph.py
-const PIPELINE_NODES = [
-  { id: "intake", label: "Omnichannel Intake", icon: "📡", description: "Multimodal ingestion — WhatsApp, voice, web, letters" },
-  { id: "auditor", label: "Systemic Auditor", icon: "🔍", description: "Cluster detection via vector similarity" },
-  { id: "priority", label: "Priority Logic", icon: "⚖️", description: "LLM-based impact scoring (1–100)" },
-  { id: "dispatch", label: "Spatial Dispatch", icon: "📍", description: "Nearest qualified officer matching" },
-  { id: "resolution", label: "Verification", icon: "✓", description: "AI-verified resolution via photo proof" },
-] as const;
-
-type NodeId = (typeof PIPELINE_NODES)[number]["id"];
-type NodeState = "idle" | "processing" | "completed" | "waiting";
-
-interface NodeStatus {
-  state: NodeState;
-  lastEvent?: string;
-  detail?: string;
-  score?: number;
-  color?: string;
-  timestamp?: number;
+interface AgentNode {
+  id: string;
+  label: string;
+  sublabel: string;
+  icon: string;
+  status: "idle" | "active" | "done";
+  color: string;
+  metric?: string;
 }
 
 interface AgentCanvasProps {
   events: PulseEvent[];
   logs: SwarmLogEntry[];
+  status?: string;
 }
 
-function deriveNodeStates(events: PulseEvent[], logs: SwarmLogEntry[]): Record<NodeId, NodeStatus> {
-  const states: Record<NodeId, NodeStatus> = {
-    intake: { state: "idle" },
-    auditor: { state: "idle" },
-    priority: { state: "idle" },
-    dispatch: { state: "idle" },
-    resolution: { state: "idle" },
-  };
+export function AgentCanvas({ events, logs, status = "mock" }: AgentCanvasProps) {
+  const analysisLogs = logs.filter(l => l.type === "analysis");
+  const dispatchLogs = logs.filter(l => l.type === "dispatch");
+  const verifyLogs = logs.filter(l => l.type === "verification");
 
-  if (events.length === 0) return states;
-
-  const latest = events[0];
-  const recentLogs = logs.slice(0, 8);
-
-  // Intake always completed if we have events
-  states.intake = { state: "completed", lastEvent: latest.event_id, detail: `${events.length} events ingested` };
-
-  // Derive from latest event status
-  switch (latest.status) {
-    case "NEW":
-      states.auditor = { state: "processing", lastEvent: latest.event_id, detail: "Checking clusters..." };
-      break;
-    case "ANALYZING":
-      states.auditor = { state: "completed", lastEvent: latest.event_id, detail: "Cluster check done" };
-      states.priority = { state: "processing", lastEvent: latest.event_id, detail: "Scoring impact..." };
-      break;
-    case "DISPATCHED":
-      states.auditor = { state: "completed", lastEvent: latest.event_id };
-      states.priority = {
-        state: "completed", lastEvent: latest.event_id,
-        detail: latest.log_message || "Scored",
-        score: parseInt(latest.log_message?.match(/score: (\d+)/i)?.[1] || "0"),
-        color: latest.severity_color,
-      };
-      states.dispatch = {
-        state: "completed", lastEvent: latest.event_id,
-        detail: latest.assigned_officer ? `Officer ${latest.assigned_officer.officer_id}` : "Dispatched",
-      };
-      states.resolution = { state: "waiting", detail: "Awaiting field verification" };
-      break;
-    case "IN_PROGRESS":
-      states.auditor = { state: "completed" };
-      states.priority = { state: "completed", color: latest.severity_color };
-      states.dispatch = { state: "completed" };
-      states.resolution = { state: "processing", detail: "Officer en route..." };
-      break;
-    case "RESOLVED":
-      states.auditor = { state: "completed" };
-      states.priority = { state: "completed", color: latest.severity_color };
-      states.dispatch = { state: "completed" };
-      states.resolution = { state: "completed", detail: "Verified & closed" };
-      break;
-  }
-
-  // Enrich from logs
-  for (const log of recentLogs) {
-    if (log.type === "analysis" && log.event_id === latest.event_id) {
-      if (log.message.toLowerCase().includes("cluster")) {
-        states.auditor.detail = log.message.slice(0, 60);
-      }
-      if (log.message.toLowerCase().includes("score")) {
-        states.priority.detail = log.message.slice(0, 60);
-      }
-    }
-    if (log.type === "dispatch" && log.event_id === latest.event_id) {
-      states.dispatch.detail = log.message.slice(0, 60);
-    }
-  }
-
-  return states;
-}
-
-const stateColors: Record<NodeState, { bg: string; fg: string; border: string; pulse?: boolean }> = {
-  idle: { bg: "var(--bg-surface)", fg: "var(--fg-muted)", border: "var(--border-light)" },
-  processing: { bg: "var(--accent-blue-dim)", fg: "var(--accent-blue)", border: "var(--accent-blue)", pulse: true },
-  completed: { bg: "var(--accent-green-dim)", fg: "var(--accent-green)", border: "var(--accent-green)" },
-  waiting: { bg: "var(--accent-amber-dim)", fg: "var(--accent-amber)", border: "var(--accent-amber)" },
-};
-
-export function AgentCanvas({ events, logs }: AgentCanvasProps) {
-  const [nodeStates, setNodeStates] = useState<Record<NodeId, NodeStatus>>(() => deriveNodeStates([], []));
-  const [selectedNode, setSelectedNode] = useState<NodeId | null>(null);
-  const [processedCount, setProcessedCount] = useState(0);
-
-  useEffect(() => {
-    setNodeStates(deriveNodeStates(events, logs));
-    setProcessedCount(events.length);
-  }, [events, logs]);
-
-  // Animate processing nodes
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 800);
-    return () => clearInterval(id);
-  }, []);
-
-  const selectedInfo = selectedNode ? PIPELINE_NODES.find(n => n.id === selectedNode) : null;
-  const selectedStatus = selectedNode ? nodeStates[selectedNode] : null;
+  const nodes: AgentNode[] = [
+    {
+      id: "ingestion",
+      label: "Multimodal Ingestion",
+      sublabel: "OCR · Speech-to-Text · NLP",
+      icon: "◉",
+      status: events.length > 0 ? "done" : "idle",
+      color: "var(--accent-green)",
+      metric: `${events.length} processed`,
+    },
+    {
+      id: "auditor",
+      label: "Systemic Auditor",
+      sublabel: "Pinecone Cluster Analysis",
+      icon: "⧉",
+      status: analysisLogs.length > 0 ? "done" : "idle",
+      color: "var(--accent-amber)",
+      metric: `${events.filter(e => e.log_message?.includes("Cluster")).length} clusters`,
+    },
+    {
+      id: "priority",
+      label: "Priority Logic Agent",
+      sublabel: "LLM Impact Matrix (Nemotron 120B)",
+      icon: "◔",
+      status: analysisLogs.length > 0 ? "done" : "idle",
+      color: "var(--accent-crimson)",
+      metric: `${events.filter(e => e.severity === "critical").length} critical`,
+    },
+    {
+      id: "dispatch",
+      label: "Dispatch Agent",
+      sublabel: "Spatial Officer Matching",
+      icon: "⊕",
+      status: dispatchLogs.length > 0 ? "done" : "idle",
+      color: "var(--accent-blue)",
+      metric: `${events.filter(e => e.assigned_officer).length} dispatched`,
+    },
+    {
+      id: "verify",
+      label: "Verification Agent",
+      sublabel: "Photo AI · Citizen Feedback",
+      icon: "✓",
+      status: verifyLogs.length > 0 ? "done" : "idle",
+      color: "var(--accent-green)",
+      metric: `${events.filter(e => e.status === "RESOLVED").length} verified`,
+    },
+  ];
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
-      <div className="px-4 py-3 border-b flex items-center justify-between shrink-0"
-        style={{ borderColor: "var(--border-light)" }}>
-        <div>
-          <h2 className="text-sm font-semibold" style={{ color: "var(--fg-primary)" }}>Live Agent Canvas</h2>
-          <p className="text-[10px] font-mono mt-0.5" style={{ color: "var(--fg-muted)" }}>
-            Real-time swarm pipeline visualization
-          </p>
-        </div>
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono px-2 py-1 rounded"
-            style={{ background: "var(--bg-surface)", color: "var(--fg-muted)" }}>
-            {processedCount} events processed
+          <span className="text-lg" style={{ color: "var(--fg-primary)" }}>⬡</span>
+          <h2 className="text-base font-semibold" style={{ color: "var(--fg-primary)" }}>Agent Orchestration Canvas</h2>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded" style={{
+            background: status === "connected" ? "var(--accent-green-dim)" : "var(--accent-amber-dim)",
+            color: status === "connected" ? "var(--accent-green)" : "var(--accent-amber)",
+          }}>
+            {status === "connected" ? "● LIVE" : "◉ DEMO"}
           </span>
         </div>
+        <span className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
+          LangGraph · {events.length} events processed
+        </span>
       </div>
 
-      {/* Pipeline graph */}
-      <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
-        <div className="flex items-center gap-2 md:gap-4 max-w-full">
-          {PIPELINE_NODES.map((node, i) => {
-            const status = nodeStates[node.id];
-            const colors = stateColors[status.state];
-            const isProcessing = status.state === "processing";
-            const isSelected = selectedNode === node.id;
-
-            return (
-              <div key={node.id} className="flex items-center gap-2 md:gap-4">
-                {/* Node */}
-                <button
-                  onClick={() => setSelectedNode(isSelected ? null : node.id)}
-                  className="relative flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl border-2 transition-all cursor-pointer min-w-[90px] md:min-w-[120px]"
-                  style={{
-                    background: colors.bg,
-                    borderColor: isSelected ? colors.fg : colors.border,
-                    boxShadow: isSelected ? `0 0 0 2px ${colors.fg}30` : "none",
-                  }}
-                >
-                  {/* Processing pulse */}
-                  {isProcessing && (
-                    <span className="absolute inset-0 rounded-xl animate-ping opacity-20"
-                      style={{ background: colors.fg }} />
-                  )}
-
-                  <span className="text-xl md:text-2xl">{node.icon}</span>
-                  <span className="text-[10px] md:text-[11px] font-semibold text-center leading-tight"
-                    style={{ color: colors.fg }}>
-                    {node.label}
-                  </span>
-
-                  {/* State badge */}
-                  <span className="text-[8px] md:text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-full"
-                    style={{ background: `${colors.fg}20`, color: colors.fg }}>
-                    {isProcessing ? ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"][tick % 8] + " " : ""}
-                    {status.state}
-                  </span>
-
-                  {/* Score badge for priority node */}
-                  {node.id === "priority" && status.score ? (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                      style={{ background: status.color || "var(--accent-amber)", color: "#fff" }}>
-                      {status.score}
-                    </span>
-                  ) : null}
-                </button>
-
-                {/* Edge arrow */}
-                {i < PIPELINE_NODES.length - 1 && (
-                  <div className="flex items-center">
-                    <div className="w-4 md:w-8 h-0.5 rounded-full relative overflow-hidden"
-                      style={{
-                        background: status.state === "completed" ? "var(--accent-green)" : "var(--border-light)",
-                      }}>
-                      {isProcessing && (
-                        <div className="absolute inset-y-0 left-0 w-1/2 rounded-full animate-pulse"
-                          style={{ background: "var(--accent-blue)" }} />
-                      )}
-                    </div>
-                    <span className="text-[10px]"
-                      style={{ color: status.state === "completed" ? "var(--accent-green)" : "var(--fg-muted)" }}>
-                      ▸
-                    </span>
-                  </div>
-                )}
+      {/* Pipeline Flow */}
+      <div className="rounded-lg border p-5" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+        <h3 className="text-[11px] font-mono uppercase tracking-wider mb-5" style={{ color: "var(--fg-muted)" }}>
+          Pipeline Flow — Sequential Graph
+        </h3>
+        <div className="flex flex-col lg:flex-row items-stretch gap-0">
+          {nodes.map((node, i) => (
+            <div key={node.id} className="flex flex-col lg:flex-row items-center flex-1">
+              {/* Node */}
+              <div className="w-full lg:flex-1 rounded-lg border p-4 transition-all"
+                style={{
+                  borderColor: node.status === "done" ? node.color : "var(--border-light)",
+                  background: node.status === "done" ? `${node.color}08` : "var(--bg-elevated)",
+                }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base" style={{ color: node.color }}>{node.icon}</span>
+                  <span className="text-[12px] font-semibold" style={{ color: "var(--fg-primary)" }}>{node.label}</span>
+                  <span className="ml-auto w-2 h-2 rounded-full" style={{
+                    background: node.status === "done" ? node.color : "var(--border)",
+                    boxShadow: node.status === "done" ? `0 0 6px ${node.color}` : "none",
+                  }} />
+                </div>
+                <p className="text-[10px] font-mono mb-2" style={{ color: "var(--fg-muted)" }}>{node.sublabel}</p>
+                <p className="text-[11px] font-mono font-semibold" style={{ color: node.color }}>{node.metric}</p>
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Detail panel */}
-      {selectedInfo && selectedStatus && (
-        <div className="border-t px-4 py-3 shrink-0" style={{ borderColor: "var(--border-light)", background: "var(--bg-surface)" }}>
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">{selectedInfo.icon}</span>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-primary)" }}>{selectedInfo.label}</h3>
-              <p className="text-[11px] mt-0.5" style={{ color: "var(--fg-muted)" }}>{selectedInfo.description}</p>
-              {selectedStatus.detail && (
-                <p className="text-[11px] font-mono mt-1.5 px-2 py-1 rounded inline-block"
-                  style={{ background: "var(--bg-card)", color: "var(--fg-secondary)" }}>
-                  {selectedStatus.detail}
-                </p>
-              )}
-              {selectedStatus.lastEvent && (
-                <p className="text-[9px] font-mono mt-1" style={{ color: "var(--fg-muted)" }}>
-                  Event: {selectedStatus.lastEvent}
-                </p>
+              {/* Arrow */}
+              {i < nodes.length - 1 && (
+                <>
+                  <div className="hidden lg:flex items-center px-1">
+                    <div className="w-6 h-px" style={{ background: node.status === "done" ? node.color : "var(--border)" }} />
+                    <div className="w-0 h-0 border-t-[4px] border-b-[4px] border-l-[6px] border-t-transparent border-b-transparent"
+                      style={{ borderLeftColor: node.status === "done" ? node.color : "var(--border)" }} />
+                  </div>
+                  <div className="flex lg:hidden items-center justify-center py-1">
+                    <div className="h-4 w-px" style={{ background: node.status === "done" ? node.color : "var(--border)" }} />
+                  </div>
+                </>
               )}
             </div>
-            <span className="text-[9px] font-mono uppercase px-2 py-1 rounded-full shrink-0"
-              style={{
-                background: stateColors[selectedStatus.state].bg,
-                color: stateColors[selectedStatus.state].fg,
-                border: `1px solid ${stateColors[selectedStatus.state].border}`,
-              }}>
-              {selectedStatus.state}
-            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Agent Activity Feed */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+          <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>
+            Recent Agent Actions
+          </h3>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            {logs.slice(0, 15).map(log => {
+              const typeColor: Record<string, string> = {
+                analysis: "var(--accent-amber)",
+                dispatch: "var(--accent-blue)",
+                verification: "var(--accent-green)",
+                system: "var(--fg-muted)",
+                escalation: "var(--accent-crimson)",
+              };
+              return (
+                <div key={log.id} className="flex items-start gap-2 py-1.5">
+                  <span className="text-[9px] font-mono font-bold px-1 py-px rounded mt-0.5 shrink-0"
+                    style={{ background: `${typeColor[log.type] || "var(--fg-muted)"}18`, color: typeColor[log.type] || "var(--fg-muted)" }}>
+                    {log.type.slice(0, 4).toUpperCase()}
+                  </span>
+                  <span className="text-[11px] font-mono leading-relaxed" style={{ color: "var(--fg-secondary)" }}>
+                    {log.message}
+                  </span>
+                </div>
+              );
+            })}
+            {logs.length === 0 && (
+              <p className="text-[11px] font-mono py-4 text-center" style={{ color: "var(--fg-muted)" }}>
+                No agent activity yet. Trigger an event to see the swarm in action.
+              </p>
+            )}
           </div>
         </div>
-      )}
+
+        {/* Agent health */}
+        <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+          <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>
+            Agent Health Matrix
+          </h3>
+          <div className="space-y-3">
+            {[
+              { name: "Systemic Auditor", desc: "Pinecone vector similarity", logs: analysisLogs.length, color: "var(--accent-amber)" },
+              { name: "Priority Agent", desc: "OpenRouter LLM scoring", logs: analysisLogs.length, color: "var(--accent-crimson)" },
+              { name: "Dispatch Agent", desc: "Spatial officer matching", logs: dispatchLogs.length, color: "var(--accent-blue)" },
+              { name: "Verification Agent", desc: "Photo + feedback loop", logs: verifyLogs.length, color: "var(--accent-green)" },
+            ].map(agent => (
+              <div key={agent.name} className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{
+                  background: agent.logs > 0 ? agent.color : "var(--border)",
+                  boxShadow: agent.logs > 0 ? `0 0 6px ${agent.color}` : "none",
+                }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-medium" style={{ color: "var(--fg-primary)" }}>{agent.name}</p>
+                  <p className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>{agent.desc}</p>
+                </div>
+                <span className="text-[11px] font-mono tabular-nums shrink-0" style={{ color: agent.color }}>
+                  {agent.logs} ops
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

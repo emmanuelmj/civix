@@ -8,10 +8,14 @@ export function Sidebar() {
 
   const navItems = [
     { label: "Live Grid", icon: "◫", href: "/" },
-    { label: "Agent Canvas", icon: "⧉", href: "/canvas" },
+    { label: "Intake Feed", icon: "◉", href: "/intake" },
+    { label: "Swarm Log", icon: "⧉", href: "/swarm-log" },
+    { label: "Agent Canvas", icon: "⬡", href: "/canvas" },
     { label: "Knowledge Graph", icon: "◎", href: "/graph" },
-    { label: "Reports", icon: "◔", href: "/reports" },
-    { label: "Leaderboard", icon: "⊕", href: "/leaderboard" },
+    { label: "Reports", icon: "▤", href: "/reports" },
+    { label: "Analytics", icon: "◔", href: "/analytics" },
+    { label: "Officers", icon: "⊕", href: "/officers" },
+    { label: "Settings", icon: "⚙", href: "/settings" },
   ];
 
   return (
