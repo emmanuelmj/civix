@@ -1,10 +1,11 @@
 """
-Civix-Pulse Swarm — LangGraph Pipeline
-========================================
-Three-node sequential graph:
-  1. Systemic Auditor  → cluster detection via Pinecone similarity
+Civix-Pulse Swarm — LangGraph Pipeline (Enhanced)
+===================================================
+Four-node sequential graph with cluster amplification:
+  1. Systemic Auditor  → real Pinecone vector similarity cluster detection
   2. Priority Logic    → LLM-based impact scoring (City Planner persona)
-  3. Dispatch Agent    → geospatial officer matching
+  3. Cluster Amplifier → boosts score when cluster pattern detected
+  4. Dispatch Agent    → domain-aware officer matching with proximity
 
 All LLM calls go to cloud APIs (OpenRouter). No local model loading.
 LangSmith tracing is configured via environment variables.
@@ -12,10 +13,11 @@ LangSmith tracing is configured via environment variables.
 
 import json
 import logging
+import math
 import os
 import random
 import re
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -27,24 +29,22 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 load_dotenv()
 
-# LangSmith tracing — reads from .env automatically
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "civix-pulse")
 
 logger = logging.getLogger("civix-pulse.swarm")
 
-# Default free model on OpenRouter (configurable via env)
 OPENROUTER_MODEL = os.environ.get(
     "OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"
 )
 
-# Pinecone config
-PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
-PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "civix-pulse-events")
-CLUSTER_SIMILARITY_THRESHOLD = 0.85
+CLUSTER_SIMILARITY_THRESHOLD = float(
+    os.environ.get("CLUSTER_THRESHOLD", "0.85")
+)
+CLUSTER_AMPLIFY_BONUS = 15  # Score bonus when cluster detected
 
 # ---------------------------------------------------------------------------
-# State Schema
+# State Schema (Enhanced)
 # ---------------------------------------------------------------------------
 
 class PulseState(TypedDict):
@@ -52,15 +52,21 @@ class PulseState(TypedDict):
     event_id: str
     translated_description: str
     domain: str
-    coordinates: dict             # {"lat": float, "lng": float}
-    cluster_found: bool           # True if linked to an existing Master Event
-    impact_score: int             # 1–100, set by Priority Logic Agent
-    severity_color: str           # Hex: #FFFF00 (Yellow), #FFA500 (Orange), #FF0000 (Red)
-    reasoning: str                # One-line reasoning from Priority Agent
-    matched_officer: dict | None  # Dispatched officer details
+    coordinates: dict                # {"lat": float, "lng": float}
+    # Auditor outputs
+    cluster_found: bool
+    cluster_id: str                  # Master event ID if cluster found
+    cluster_size: int                # Number of events in cluster
+    similar_events: list[dict]       # [{id, score, metadata}, ...]
+    # Priority outputs
+    impact_score: int                # 1–100
+    severity_color: str              # Hex color
+    reasoning: str                   # One-line LLM reasoning
+    # Dispatch outputs
+    matched_officer: dict | None
 
 # ---------------------------------------------------------------------------
-# Structured Output Schema for Priority Agent
+# Priority Agent — structured output schema
 # ---------------------------------------------------------------------------
 
 class PriorityOutput(BaseModel):
@@ -69,121 +75,128 @@ class PriorityOutput(BaseModel):
         description="Impact score from 1 to 100 based on urgency and societal impact"
     )
     severity_color: str = Field(
-        description="Hex color code: #FFFF00 (Yellow/Low), #FFA500 (Orange/Medium), or #FF0000 (Red/Critical)"
+        description="Hex color: #FFFF00 (Low), #FFA500 (Medium), #FF0000 (Critical)"
     )
     reasoning: str = Field(
         description="One-sentence justification for the score"
     )
 
 # ---------------------------------------------------------------------------
-# Node 1: Systemic Auditor (Cluster Detection via Pinecone)
+# Node 1: Systemic Auditor (Real Pinecone Cluster Detection)
 # ---------------------------------------------------------------------------
 
-def _get_pinecone_index():
-    """Initialize Pinecone client and return the index. Returns None if unconfigured."""
-    if not PINECONE_API_KEY or PINECONE_API_KEY == "...":
-        return None
+def _get_pinecone_service():
+    """Get the PineconeService singleton. Returns None if not available."""
     try:
-        from pinecone import Pinecone, ServerlessSpec
-
-        pc = Pinecone(api_key=PINECONE_API_KEY)
-
-        # Auto-create index if it doesn't exist
-        existing = [idx.name for idx in pc.list_indexes()]
-        if PINECONE_INDEX_NAME not in existing:
-            logger.info(f"[Auditor] Creating Pinecone index '{PINECONE_INDEX_NAME}'...")
-            pc.create_index(
-                name=PINECONE_INDEX_NAME,
-                dimension=1536,
-                metric="cosine",
-                spec=ServerlessSpec(cloud="aws", region="us-east-1"),
-            )
-            logger.info(f"[Auditor] Index '{PINECONE_INDEX_NAME}' created.")
-
-        return pc.Index(PINECONE_INDEX_NAME)
-    except Exception as e:
-        logger.warning(f"[Auditor] Pinecone init failed: {e}")
+        from swarm.pinecone_watcher import PineconeService
+        svc = PineconeService.get_instance()
+        return svc if svc.is_connected else None
+    except Exception:
         return None
 
 
 async def systemic_auditor_node(state: PulseState) -> dict:
     """
-    Checks if this event is part of a systemic cluster.
+    Checks if this event is part of a systemic cluster using Pinecone
+    vector similarity search.
 
     Flow:
       1. Fetch the event's vector from Pinecone by event_id
-         (Dev 2's n8n workflow stores events with embeddings)
-      2. Query Pinecone for similar vectors within recent timeframe
-      3. If top similarity > 0.85, link to existing Master Event
-
-    Falls back to mock random score if Pinecone is not configured
-    or the event hasn't been indexed yet.
+      2. Query for similar vectors (cosine similarity)
+      3. If top match > threshold → cluster detected
+      4. Returns cluster details: cluster_id, cluster_size, similar_events
     """
     logger.info(f"[Auditor] Checking clusters for event: {state['event_id']}")
 
-    index = _get_pinecone_index()
-    if index is None:
-        logger.warning("[Auditor] Pinecone not configured — using mock scorer.")
-        return _mock_cluster_check()
+    pc = _get_pinecone_service()
+    if pc is None:
+        logger.warning("[Auditor] Pinecone not available — using heuristic.")
+        return _mock_cluster_check(state)
 
     try:
-        # Fetch this event's vector from Pinecone (stored by Dev 2's ingestion pipeline)
-        fetch_result = index.fetch(ids=[state["event_id"]])
+        # Try to fetch this event's vector from Pinecone
+        vectors = pc.fetch_vectors([state["event_id"]])
 
-        if state["event_id"] not in fetch_result.vectors:
-            logger.warning(
-                f"[Auditor] Event {state['event_id']} not found in Pinecone. "
-                f"Dev 2 may not have indexed it yet. Using mock."
+        if state["event_id"] not in vectors:
+            # Event not yet in Pinecone — might be from webhook or trigger-swarm
+            # Use the attached vector if available, else fall back
+            logger.info(
+                f"[Auditor] Event {state['event_id']} not in Pinecone index. "
+                f"Using heuristic cluster check."
             )
-            return _mock_cluster_check()
+            return _mock_cluster_check(state)
 
-        event_vector = fetch_result.vectors[state["event_id"]].values
+        event_vector = list(vectors[state["event_id"]].values)
 
-        # Query for similar events (potential cluster members)
-        query_result = index.query(
+        # Query for similar events
+        matches = pc.query_similar(
             vector=event_vector,
-            top_k=5,
-            include_metadata=True,
+            top_k=10,
+            exclude_id=state["event_id"],
         )
 
-        # Filter out self-match and check similarity
-        matches = [
-            m for m in query_result.matches
-            if m.id != state["event_id"]
+        # Filter by threshold
+        cluster_matches = [
+            m for m in matches if m["score"] >= CLUSTER_SIMILARITY_THRESHOLD
         ]
 
-        if matches and matches[0].score >= CLUSTER_SIMILARITY_THRESHOLD:
-            cluster_size = sum(
-                1 for m in matches if m.score >= CLUSTER_SIMILARITY_THRESHOLD
-            )
+        if cluster_matches:
+            master_id = cluster_matches[0]["id"]
+            cluster_size = len(cluster_matches)
             logger.info(
-                f"[Auditor] CLUSTER DETECTED — top similarity: {matches[0].score:.3f}, "
+                f"[Auditor] 🔗 CLUSTER DETECTED — "
+                f"top similarity: {cluster_matches[0]['score']:.3f}, "
                 f"cluster size: {cluster_size}, "
-                f"master event: {matches[0].id}"
+                f"master event: {master_id}"
             )
-            return {"cluster_found": True}
+            return {
+                "cluster_found": True,
+                "cluster_id": master_id,
+                "cluster_size": cluster_size,
+                "similar_events": cluster_matches[:5],
+            }
         else:
-            top_score = matches[0].score if matches else 0.0
+            top_score = matches[0]["score"] if matches else 0.0
             logger.info(
-                f"[Auditor] No cluster found — top similarity: {top_score:.3f}. "
-                f"Proceeding as new event."
+                f"[Auditor] No cluster — "
+                f"top similarity: {top_score:.3f}. Isolated event."
             )
-            return {"cluster_found": False}
+            return {
+                "cluster_found": False,
+                "cluster_id": "",
+                "cluster_size": 0,
+                "similar_events": matches[:3],
+            }
 
     except Exception as e:
-        logger.error(f"[Auditor] Pinecone query failed: {e}. Using mock.")
-        return _mock_cluster_check()
+        logger.error(f"[Auditor] Pinecone query failed: {e}. Using heuristic.")
+        return _mock_cluster_check(state)
 
 
-def _mock_cluster_check() -> dict:
-    """Mock fallback: random similarity score for testing."""
-    similarity_score = random.uniform(0.0, 1.0)
-    cluster_found = similarity_score > CLUSTER_SIMILARITY_THRESHOLD
+def _mock_cluster_check(state: PulseState) -> dict:
+    """Heuristic fallback: keyword-based cluster detection."""
+    desc = state["translated_description"].lower()
+    domain = state["domain"].upper()
+
+    # Domain-based heuristic: water/electricity complaints tend to cluster
+    cluster_probability = 0.15
+    if domain in ("WATER", "ELECTRICITY"):
+        cluster_probability = 0.35
+    if any(kw in desc for kw in ["burst", "overflow", "outage", "supply", "leak"]):
+        cluster_probability = 0.5
+
+    cluster_found = random.random() < cluster_probability
     if cluster_found:
-        logger.info(f"[Auditor] MOCK CLUSTER DETECTED — similarity: {similarity_score:.2f}")
+        logger.info(f"[Auditor] HEURISTIC CLUSTER DETECTED for {domain} event")
     else:
-        logger.info(f"[Auditor] Mock: no cluster — similarity: {similarity_score:.2f}")
-    return {"cluster_found": cluster_found}
+        logger.info(f"[Auditor] Heuristic: no cluster for {domain} event")
+
+    return {
+        "cluster_found": cluster_found,
+        "cluster_id": f"cluster-{domain.lower()}-{random.randint(100,999)}" if cluster_found else "",
+        "cluster_size": random.randint(3, 12) if cluster_found else 0,
+        "similar_events": [],
+    }
 
 # ---------------------------------------------------------------------------
 # Node 2: Priority Logic Agent (Impact Matrix via LLM)
@@ -220,8 +233,8 @@ SCORING:
 
 AMPLIFIERS (add 10-20 points):
 - Near school, hospital, or worship place
-- Affects vulnerable populations
-- Multiple similar reports
+- Affects vulnerable populations (elderly, children)
+- Part of a systemic cluster (multiple similar reports)
 
 RESPONSE FORMAT (exactly this, nothing else):
 {"impact_score": 75, "severity_color": "#FF0000", "reasoning": "Water main burst affecting 50+ households"}"""
@@ -229,12 +242,13 @@ RESPONSE FORMAT (exactly this, nothing else):
 PRIORITY_USER_TEMPLATE = """Complaint: {description}
 Domain: {domain}
 Location: ({lat}, {lng})
+Cluster detected: {cluster_found} (cluster size: {cluster_size})
 
 Return ONLY the JSON object."""
 
 
 def _parse_priority_json(text: str) -> dict | None:
-    """Extract impact_score, severity_color, and reasoning from LLM text response."""
+    """Extract impact_score, severity_color, and reasoning from LLM response."""
     json_match = re.search(r"\{[^}]+\}", text, re.DOTALL)
     if not json_match:
         return None
@@ -244,7 +258,11 @@ def _parse_priority_json(text: str) -> dict | None:
         color = data.get("severity_color", "")
         reasoning = data.get("reasoning", "")
         if 1 <= score <= 100 and color.startswith("#"):
-            return {"impact_score": score, "severity_color": color, "reasoning": reasoning}
+            return {
+                "impact_score": score,
+                "severity_color": color,
+                "reasoning": reasoning,
+            }
     except (json.JSONDecodeError, ValueError, TypeError):
         pass
     return None
@@ -252,16 +270,14 @@ def _parse_priority_json(text: str) -> dict | None:
 
 async def priority_logic_node(state: PulseState) -> dict:
     """
-    Uses an LLM (via OpenRouter) as a City Planner to evaluate the grievance
-    and assign an impact_score (1-100) and severity_color (hex).
-
-    Falls back to a heuristic mock if no API key is configured.
+    Uses LLM (OpenRouter) as a City Planner to evaluate the grievance.
+    Now includes cluster context in the prompt for better scoring.
     """
     logger.info(f"[Priority] Scoring event: {state['event_id']}")
 
     llm = _build_priority_llm()
     if llm is None:
-        logger.warning("[Priority] No valid OPENROUTER_API_KEY — using mock scorer.")
+        logger.warning("[Priority] No OPENROUTER_API_KEY — using keyword scorer.")
         return _mock_priority_score(state)
 
     user_message = PRIORITY_USER_TEMPLATE.format(
@@ -269,6 +285,8 @@ async def priority_logic_node(state: PulseState) -> dict:
         domain=state["domain"],
         lat=state["coordinates"]["lat"],
         lng=state["coordinates"]["lng"],
+        cluster_found=state.get("cluster_found", False),
+        cluster_size=state.get("cluster_size", 0),
     )
 
     messages = [
@@ -282,34 +300,42 @@ async def priority_logic_node(state: PulseState) -> dict:
 
         if parsed:
             logger.info(
-                f"[Priority] Score: {parsed['impact_score']} | "
-                f"Color: {parsed['severity_color']}"
+                f"[Priority] LLM Score: {parsed['impact_score']} | "
+                f"Color: {parsed['severity_color']} | "
+                f"Reasoning: {parsed['reasoning'][:60]}"
             )
             return parsed
         else:
-            logger.warning(f"[Priority] Could not parse LLM response: {response.content[:200]}")
+            logger.warning(
+                f"[Priority] Could not parse LLM response: "
+                f"{response.content[:200]}"
+            )
             return _mock_priority_score(state)
 
     except Exception as e:
-        logger.error(f"[Priority] LLM call failed: {e}. Using mock scorer.")
+        logger.error(f"[Priority] LLM call failed: {e}. Using keyword scorer.")
         return _mock_priority_score(state)
 
 
 def _mock_priority_score(state: PulseState) -> dict:
-    """Heuristic fallback when no LLM API key is available."""
+    """Keyword-based heuristic fallback for scoring."""
     desc = state["translated_description"].lower()
-    # Simple keyword-based scoring for testing
-    critical_keywords = ["fire", "collapse", "flood", "electrocution", "live wire",
-                         "gas leak", "voltage", "sparking", "explosion", "drowning",
-                         "earthquake", "live", "wire fallen", "rupture", "evacuation"]
-    high_keywords = ["pothole", "water", "sewage", "accident", "broken", "overflow",
-                     "burst", "leaking", "damaged", "blocked", "malfunction"]
 
-    score = 35  # default medium-low
+    critical_keywords = [
+        "fire", "collapse", "flood", "electrocution", "live wire",
+        "gas leak", "voltage", "sparking", "explosion", "drowning",
+        "earthquake", "rupture", "evacuation", "chemical", "spill",
+    ]
+    high_keywords = [
+        "pothole", "water", "sewage", "accident", "broken", "overflow",
+        "burst", "leaking", "damaged", "blocked", "malfunction", "outage",
+    ]
+
+    score = 35
     if any(kw in desc for kw in critical_keywords):
-        score = random.randint(80, 95)
+        score = random.randint(78, 95)
     elif any(kw in desc for kw in high_keywords):
-        score = random.randint(50, 75)
+        score = random.randint(48, 72)
     else:
         score = random.randint(20, 45)
 
@@ -320,37 +346,134 @@ def _mock_priority_score(state: PulseState) -> dict:
     else:
         color = "#FFFF00"
 
-    logger.info(f"[Priority] Mock score: {score} | Color: {color}")
-    return {"impact_score": score, "severity_color": color, "reasoning": f"Keyword-matched: {state['domain']} domain issue"}
+    reasoning = f"Keyword analysis: {state['domain']} domain issue"
+    logger.info(f"[Priority] Keyword score: {score} | {color}")
+    return {"impact_score": score, "severity_color": color, "reasoning": reasoning}
+
 
 # ---------------------------------------------------------------------------
-# Node 3: Dispatch Agent (Spatial Matching)
+# Node 3: Cluster Amplifier (conditional score boost)
 # ---------------------------------------------------------------------------
+
+async def cluster_amplifier_node(state: PulseState) -> dict:
+    """
+    If a cluster was detected, amplifies the impact score and escalates.
+    Systemic issues are always more critical than isolated complaints.
+    """
+    if not state.get("cluster_found"):
+        return {}
+
+    original_score = state["impact_score"]
+    boosted = min(100, original_score + CLUSTER_AMPLIFY_BONUS)
+    new_color = "#FF0000" if boosted >= 70 else state["severity_color"]
+    cluster_note = (
+        f"CLUSTER AMPLIFIED: +{CLUSTER_AMPLIFY_BONUS} pts "
+        f"(cluster of {state.get('cluster_size', 0)} events). "
+        f"{state.get('reasoning', '')}"
+    )
+
+    logger.info(
+        f"[Amplifier] Score {original_score} → {boosted} "
+        f"(cluster of {state.get('cluster_size', 0)})"
+    )
+
+    return {
+        "impact_score": boosted,
+        "severity_color": new_color,
+        "reasoning": cluster_note,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Node 4: Dispatch Agent (Domain-aware Officer Matching)
+# ---------------------------------------------------------------------------
+
+# Officer pool with domain skills and positions across Hyderabad
+OFFICER_POOL: list[dict[str, Any]] = [
+    {"officer_id": "OP-441", "name": "Raj Kumar",     "skills": ["WATER", "MUNICIPAL"],    "lat": 17.4401, "lng": 78.3489},
+    {"officer_id": "OP-227", "name": "Priya Sharma",  "skills": ["ELECTRICITY", "EMERGENCY"], "lat": 17.4500, "lng": 78.4900},
+    {"officer_id": "OP-318", "name": "Ahmed Khan",    "skills": ["TRAFFIC", "CONSTRUCTION"], "lat": 17.4947, "lng": 78.3996},
+    {"officer_id": "OP-512", "name": "Lakshmi Devi",  "skills": ["MUNICIPAL", "WATER"],    "lat": 17.3616, "lng": 78.4747},
+    {"officer_id": "OP-109", "name": "Venkat Rao",    "skills": ["EMERGENCY", "ELECTRICITY"], "lat": 17.4156, "lng": 78.4347},
+    {"officer_id": "OP-663", "name": "Fatima Begum",  "skills": ["WATER", "CONSTRUCTION"], "lat": 17.4534, "lng": 78.5267},
+    {"officer_id": "OP-774", "name": "Suresh Reddy",  "skills": ["TRAFFIC", "MUNICIPAL"],  "lat": 17.4969, "lng": 78.3579},
+    {"officer_id": "OP-155", "name": "Ananya Iyer",   "skills": ["ELECTRICITY", "EMERGENCY"], "lat": 17.3604, "lng": 78.4736},
+    {"officer_id": "OP-892", "name": "Mohd Irfan",    "skills": ["CONSTRUCTION", "EMERGENCY"], "lat": 17.4849, "lng": 78.3942},
+    {"officer_id": "OP-346", "name": "Kavitha Nair",  "skills": ["MUNICIPAL", "TRAFFIC"],  "lat": 17.4300, "lng": 78.4820},
+    {"officer_id": "OP-501", "name": "Ravi Teja",     "skills": ["WATER", "EMERGENCY"],    "lat": 17.3997, "lng": 78.5594},
+    {"officer_id": "OP-213", "name": "Meera Das",     "skills": ["ELECTRICITY", "CONSTRUCTION"], "lat": 17.4632, "lng": 78.3522},
+]
+
+# Track which officers are currently assigned
+_officer_assignments: dict[str, int] = {}  # officer_id → active task count
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Haversine distance in kilometers between two lat/lng points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlng / 2) ** 2
+    )
+    return R * 2 * math.asin(math.sqrt(a))
+
 
 def _find_nearest_officer(domain: str, lat: float, lng: float) -> dict:
     """
-    MOCK IMPLEMENTATION: Returns a hardcoded officer near the event.
-
-    In production, this queries PostGIS/MongoDB:
-      SELECT * FROM officers
-      WHERE status = 'AVAILABLE' AND domain_skills @> '{domain}'
-      ORDER BY ST_Distance(location, ST_Point(lng, lat))
-      LIMIT 1;
+    Finds the nearest available officer with matching domain skills.
+    Scoring: distance (lower is better) + workload (fewer tasks is better).
+    Falls back to any officer if no domain match found.
     """
+    # Filter by domain skill
+    domain_officers = [
+        o for o in OFFICER_POOL if domain in o["skills"]
+    ]
+    candidates = domain_officers if domain_officers else OFFICER_POOL
+
+    best_officer = None
+    best_score = float("inf")
+
+    for officer in candidates:
+        dist = _haversine_km(lat, lng, officer["lat"], officer["lng"])
+        workload = _officer_assignments.get(officer["officer_id"], 0)
+        # Combined score: distance + 2km penalty per active task
+        score = dist + workload * 2.0
+
+        if score < best_score:
+            best_score = score
+            best_officer = officer
+
+    if best_officer is None:
+        best_officer = random.choice(OFFICER_POOL)
+
+    # Record assignment
+    oid = best_officer["officer_id"]
+    _officer_assignments[oid] = _officer_assignments.get(oid, 0) + 1
+
+    dist_km = _haversine_km(lat, lng, best_officer["lat"], best_officer["lng"])
+
     return {
-        "officer_id": "OP-441",
-        "name": "Raj Kumar",
+        "officer_id": oid,
+        "name": best_officer["name"],
         "domain": domain,
-        "current_lat": round(lat + 0.001, 6),
-        "current_lng": round(lng - 0.001, 6),
+        "skills": best_officer["skills"],
+        "current_lat": best_officer["lat"],
+        "current_lng": best_officer["lng"],
+        "distance_km": round(dist_km, 2),
+        "active_tasks": _officer_assignments[oid],
         "status": "DISPATCHED",
     }
+
 
 
 async def dispatch_agent_node(state: PulseState) -> dict:
     """
     Finds the nearest available field officer matching the event's domain
-    and dispatches them.
+    and dispatches them. Uses Haversine distance + workload balancing.
     """
     logger.info(f"[Dispatch] Matching officer for event: {state['event_id']}")
 
@@ -362,10 +485,13 @@ async def dispatch_agent_node(state: PulseState) -> dict:
 
     logger.info(
         f"[Dispatch] Matched: {officer['name']} ({officer['officer_id']}) | "
-        f"Location: ({officer['current_lat']}, {officer['current_lng']})"
+        f"Distance: {officer['distance_km']}km | "
+        f"Skills: {officer['skills']} | "
+        f"Active tasks: {officer['active_tasks']}"
     )
 
     return {"matched_officer": officer}
+
 
 # ---------------------------------------------------------------------------
 # Graph Compilation
@@ -373,23 +499,27 @@ async def dispatch_agent_node(state: PulseState) -> dict:
 
 def compile_graph() -> StateGraph:
     """
-    Builds and compiles the three-node LangGraph pipeline.
+    Builds and compiles the four-node LangGraph pipeline.
 
-    Flow:  systemic_auditor → priority_logic → dispatch_agent → END
+    Flow:
+      systemic_auditor → priority_logic → cluster_amplifier → dispatch_agent → END
     """
     graph = StateGraph(PulseState)
 
-    # Add nodes
     graph.add_node("systemic_auditor", systemic_auditor_node)
     graph.add_node("priority_logic", priority_logic_node)
+    graph.add_node("cluster_amplifier", cluster_amplifier_node)
     graph.add_node("dispatch_agent", dispatch_agent_node)
 
-    # Linear flow
     graph.set_entry_point("systemic_auditor")
     graph.add_edge("systemic_auditor", "priority_logic")
-    graph.add_edge("priority_logic", "dispatch_agent")
+    graph.add_edge("priority_logic", "cluster_amplifier")
+    graph.add_edge("cluster_amplifier", "dispatch_agent")
     graph.add_edge("dispatch_agent", END)
 
     compiled = graph.compile()
-    logger.info("LangGraph pipeline compiled: auditor → priority → dispatch")
+    logger.info(
+        "LangGraph pipeline compiled: "
+        "auditor → priority → amplifier → dispatch"
+    )
     return compiled

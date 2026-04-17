@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { MapLayer } from "@/components/MapLayer";
 import { IngestionFeed } from "@/components/IngestionFeed";
 import { SwarmLog } from "@/components/SwarmLog";
-import { usePulseStream, triggerAnalysis } from "@/lib/socket";
-import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "@/lib/types";
+import { usePulseStream, triggerAnalysis, fetchPineconeStatus, triggerRescan } from "@/lib/socket";
+import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus } from "@/lib/types";
 import { useDashboard } from "@/lib/dashboard-context";
 
 export default function DashboardPage() {
@@ -271,23 +271,23 @@ function AnalyticsView({ events, logs, intake }: { events: PulseEvent[]; logs: S
 }
 
 function OfficersView({ events }: { events: PulseEvent[] }) {
-  // Collect unique officers from dispatched events
-  const officerMap = new Map<string, { officer_id: string; lat: number; lng: number; assignments: number; domains: Set<string> }>();
+  const officerMap = new Map<string, { officer_id: string; name: string; lat: number; lng: number; assignments: number; domains: Set<string>; distance_km: number; skills: string[] }>();
   events.forEach(e => {
     if (e.assigned_officer) {
       const existing = officerMap.get(e.assigned_officer.officer_id);
       if (existing) {
         existing.assignments++;
         existing.domains.add(e.domain);
-        existing.lat = e.assigned_officer.current_lat;
-        existing.lng = e.assigned_officer.current_lng;
       } else {
         officerMap.set(e.assigned_officer.officer_id, {
           officer_id: e.assigned_officer.officer_id,
+          name: e.assigned_officer.name || e.assigned_officer.officer_id,
           lat: e.assigned_officer.current_lat,
           lng: e.assigned_officer.current_lng,
           assignments: 1,
           domains: new Set([e.domain]),
+          distance_km: e.assigned_officer.distance_km || 0,
+          skills: e.assigned_officer.skills || [],
         });
       }
     }
@@ -315,9 +315,9 @@ function OfficersView({ events }: { events: PulseEvent[] }) {
                 {off.officer_id.slice(-3)}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold" style={{ color: "var(--fg-primary)" }}>{off.officer_id}</p>
+                <p className="text-[13px] font-semibold" style={{ color: "var(--fg-primary)" }}>{off.name}</p>
                 <p className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
-                  ({off.lat.toFixed(4)}, {off.lng.toFixed(4)}) · {Array.from(off.domains).join(", ")}
+                  {off.officer_id} · ({off.lat.toFixed(4)}, {off.lng.toFixed(4)}) · {off.skills.length > 0 ? off.skills.join(", ") : Array.from(off.domains).join(", ")}
                 </p>
               </div>
               <div className="text-right shrink-0">
@@ -338,12 +338,28 @@ function OfficersView({ events }: { events: PulseEvent[] }) {
 }
 
 function SettingsView({ status, events, logs, intake }: { status: string; events: PulseEvent[]; logs: SwarmLogEntry[]; intake: IntakeFeedItem[] }) {
+  const [pcStatus, setPcStatus] = useState<PineconeStatus | null>(null);
+  const [rescanning, setRescanning] = useState(false);
+
+  useEffect(() => {
+    fetchPineconeStatus().then(setPcStatus);
+    const interval = setInterval(() => fetchPineconeStatus().then(setPcStatus), 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleRescan = async () => {
+    setRescanning(true);
+    await triggerRescan();
+    setRescanning(false);
+    setTimeout(() => fetchPineconeStatus().then(setPcStatus), 2000);
+  };
+
   const configItems = [
-    { label: "Backend", value: "localhost:8000", ok: true },
+    { label: "Backend API", value: "localhost:8000", ok: true },
     { label: "WebSocket", value: status === "connected" ? "Connected" : status, ok: status === "connected" },
     { label: "LLM Provider", value: "OpenRouter (Nemotron 120B)", ok: true },
-    { label: "Vector DB", value: "Pinecone (civix-pulse-events)", ok: true },
-    { label: "PostgreSQL", value: "Not configured", ok: false },
+    { label: "Pinecone", value: pcStatus?.pinecone?.connected ? `Connected (${pcStatus.pinecone.total_vectors} vectors)` : "Disconnected", ok: !!pcStatus?.pinecone?.connected },
+    { label: "Watcher", value: pcStatus?.watcher?.running ? `Polling every ${pcStatus.watcher.poll_interval_seconds}s` : "Not running", ok: !!pcStatus?.watcher?.running },
     { label: "LangSmith", value: "Tracing enabled", ok: true },
   ];
 
@@ -389,15 +405,34 @@ function SettingsView({ status, events, logs, intake }: { status: string; events
         </div>
       </div>
 
+      {/* Pinecone Details */}
+      <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-[11px] font-mono uppercase tracking-wider" style={{ color: "var(--fg-muted)" }}>Pinecone Vector DB</h3>
+          <button onClick={handleRescan} disabled={rescanning}
+            className="text-[10px] font-mono px-2 py-1 rounded transition-all disabled:opacity-50"
+            style={{ background: "var(--accent-blue-dim)", color: "var(--accent-blue)" }}>
+            {rescanning ? "⏳ Scanning…" : "↻ Force Rescan"}
+          </button>
+        </div>
+        <div className="space-y-1.5 text-[11px] font-mono" style={{ color: "var(--fg-secondary)" }}>
+          <p>Index: {pcStatus?.pinecone?.index_name || "civix-pulse"}</p>
+          <p>Vectors: {pcStatus?.pinecone?.total_vectors ?? "—"}</p>
+          <p>Dimension: {pcStatus?.pinecone?.dimension ?? "—"}</p>
+          <p>Processed by watcher: {pcStatus?.watcher?.processed_count ?? "—"}</p>
+        </div>
+      </div>
+
       {/* Architecture info */}
       <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>Architecture</h3>
         <div className="space-y-1.5 text-[11px] font-mono" style={{ color: "var(--fg-secondary)" }}>
-          <p>Pipeline: Systemic Auditor → Priority Agent → Dispatch Agent</p>
-          <p>Graph Engine: LangGraph (cyclic state machine)</p>
+          <p>Pipeline: Auditor → Priority → Cluster Amplifier → Dispatch</p>
+          <p>Graph Engine: LangGraph (4-node StateGraph)</p>
           <p>Model: nvidia/nemotron-3-super-120b-a12b:free via OpenRouter</p>
-          <p>Vector Search: Pinecone (1536 dims, cosine, serverless)</p>
+          <p>Vector Search: Pinecone (cosine similarity, serverless)</p>
           <p>Tracing: LangSmith (civix-pulse project)</p>
+          <p>Webhook: POST /api/v1/webhook/new-event</p>
         </div>
       </div>
     </div>
@@ -438,20 +473,20 @@ function AgentCanvasView({ events, logs, status }: { events: PulseEvent[]; logs:
     {
       id: "ingestion",
       label: "Multimodal Ingestion",
-      sublabel: "OCR · Speech-to-Text · NLP",
+      sublabel: "OCR · Speech-to-Text · n8n Webhooks",
       icon: "◉",
       status: events.length > 0 ? "done" : "idle",
       color: "var(--accent-green)",
-      metric: `${events.length} processed`,
+      metric: `${events.length} ingested`,
     },
     {
       id: "auditor",
       label: "Systemic Auditor",
-      sublabel: "Pinecone Cluster Analysis",
+      sublabel: "Pinecone Vector Similarity (cosine)",
       icon: "⧉",
       status: analysisLogs.length > 0 ? "done" : "idle",
       color: "var(--accent-amber)",
-      metric: `${events.filter(e => e.log_message?.includes("Cluster")).length} clusters`,
+      metric: `${events.filter(e => e.cluster_found).length} clusters`,
     },
     {
       id: "priority",
@@ -463,22 +498,22 @@ function AgentCanvasView({ events, logs, status }: { events: PulseEvent[]; logs:
       metric: `${events.filter(e => e.severity === "critical").length} critical`,
     },
     {
+      id: "amplifier",
+      label: "Cluster Amplifier",
+      sublabel: "Systemic Pattern Score Boost (+15)",
+      icon: "⇧",
+      status: events.some(e => e.cluster_found) ? "done" : "idle",
+      color: "#a855f7",
+      metric: `${events.filter(e => e.cluster_found).length} amplified`,
+    },
+    {
       id: "dispatch",
       label: "Dispatch Agent",
-      sublabel: "Spatial Officer Matching",
+      sublabel: "Haversine Proximity + Workload Balance",
       icon: "⊕",
       status: dispatchLogs.length > 0 ? "done" : "idle",
       color: "var(--accent-blue)",
       metric: `${events.filter(e => e.assigned_officer).length} dispatched`,
-    },
-    {
-      id: "verify",
-      label: "Verification Agent",
-      sublabel: "Photo AI · Citizen Feedback",
-      icon: "✓",
-      status: verifyLogs.length > 0 ? "done" : "idle",
-      color: "var(--accent-green)",
-      metric: `${events.filter(e => e.status === "RESOLVED").length} verified`,
     },
   ];
 
@@ -493,7 +528,7 @@ function AgentCanvasView({ events, logs, status }: { events: PulseEvent[]; logs:
             background: status === "connected" ? "var(--accent-green-dim)" : "var(--accent-amber-dim)",
             color: status === "connected" ? "var(--accent-green)" : "var(--accent-amber)",
           }}>
-            {status === "connected" ? "● LIVE" : "◉ DEMO"}
+            {status === "connected" ? "● LIVE" : status === "disconnected" ? "✕ OFFLINE" : "↻ CONNECTING"}
           </span>
         </div>
         <span className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>

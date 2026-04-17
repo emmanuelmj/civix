@@ -8,6 +8,9 @@ const CHANNEL_ICONS: Record<IntakeFeedItem["channel"], string> = {
   portal: "🌐",
   camera: "📹",
   sensor: "📡",
+  webhook: "⚡",
+  api: "⌘",
+  demo: "▶",
 };
 
 const CHANNEL_COLORS: Record<IntakeFeedItem["channel"], string> = {
@@ -16,6 +19,9 @@ const CHANNEL_COLORS: Record<IntakeFeedItem["channel"], string> = {
   portal: "var(--fg-secondary)",
   camera: "var(--accent-amber)",
   sensor: "var(--accent-amber)",
+  webhook: "var(--accent-crimson)",
+  api: "var(--accent-blue)",
+  demo: "var(--fg-muted)",
 };
 
 interface IngestionFeedProps {
