@@ -160,7 +160,7 @@ export default function DashboardPage() {
         </div>
         {/* Map — fluid fill */}
         <div className="flex-1 min-h-0 relative">
-          <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
+          <MapLayer events={displayEvents} onViewDetails={setSelectedEvent} />
         </div>
       </div>
 
@@ -174,7 +174,7 @@ export default function DashboardPage() {
       <div className="flex-1 lg:hidden overflow-hidden min-h-0 min-w-0">
         {mobileTab === "map" && (
           <div className="h-full w-full relative">
-            <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
+            <MapLayer events={displayEvents} onViewDetails={setSelectedEvent} />
           </div>
         )}
         {mobileTab === "intake" && (

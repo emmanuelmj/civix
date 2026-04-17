@@ -39,9 +39,10 @@ type MapLibreType = typeof import("maplibre-gl");
 interface MapLayerProps {
   events: PulseEvent[];
   onEventClick?: (event: PulseEvent) => void;
+  onViewDetails?: (event: PulseEvent) => void;
 }
 
-export function MapLayer({ events, onEventClick }: MapLayerProps) {
+export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mlRef = useRef<MapLibreType | null>(null);
@@ -50,6 +51,8 @@ export function MapLayer({ events, onEventClick }: MapLayerProps) {
   eventsRef.current = events;
   const onEventClickRef = useRef(onEventClick);
   onEventClickRef.current = onEventClick;
+  const onViewDetailsRef = useRef(onViewDetails);
+  onViewDetailsRef.current = onViewDetails;
   const pulseRef = useRef<number | null>(null);
 
   const syncMarkers = useCallback(() => {
@@ -322,7 +325,7 @@ export function MapLayer({ events, onEventClick }: MapLayerProps) {
         const props = e.features[0].properties;
         const coords = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
 
-        // Fire onEventClick callback
+        // Fire onEventClick (popup only — does NOT open detail panel)
         const matchedEvent = eventsRef.current.find((ev) => ev.event_id === props.id);
         if (matchedEvent) onEventClickRef.current?.(matchedEvent);
 
@@ -340,7 +343,7 @@ export function MapLayer({ events, onEventClick }: MapLayerProps) {
           ? `<div style="color:#71717a;font-size:9px;margin-top:3px;">Impact score: ${Number(props.sentiment_score).toFixed(2)}</div>`
           : "";
 
-        new ml.Popup({ offset: 14, closeButton: false, maxWidth: "260px" })
+        const popup = new ml.Popup({ offset: 14, closeButton: false, maxWidth: "260px" })
           .setLngLat(coords)
           .setHTML(
             `<div style="font-family:system-ui;font-size:12px;line-height:1.5;">
@@ -354,11 +357,21 @@ export function MapLayer({ events, onEventClick }: MapLayerProps) {
               ${impactLine}
               ${props.officer ? `<div style="color:#2563eb;font-size:10px;margin-top:3px;">→ ${props.officer}</div>` : ""}
               <div style="margin-top:6px;text-align:right;">
-                <span style="color:#a855f7;font-size:10px;font-weight:500;cursor:pointer;">View Details →</span>
+                <button data-view-details="${props.id}" style="background:none;border:none;color:#a855f7;font-size:10px;font-weight:600;cursor:pointer;padding:2px 0;">View Details →</button>
               </div>
             </div>`
           )
           .addTo(map);
+
+        // Attach click handler to "View Details" button inside popup
+        const popupEl = popup.getElement();
+        const detailBtn = popupEl?.querySelector(`[data-view-details="${props.id}"]`);
+        if (detailBtn && matchedEvent) {
+          detailBtn.addEventListener("click", (evt) => {
+            evt.stopPropagation();
+            onViewDetailsRef.current?.(matchedEvent);
+          });
+        }
       });
 
       map.on("mouseenter", "events-circle", () => { map.getCanvas().style.cursor = "pointer"; });
