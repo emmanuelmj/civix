@@ -205,36 +205,31 @@ def _build_priority_llm() -> ChatOpenAI | None:
         },
     )
 
-PRIORITY_SYSTEM_PROMPT = """You are a senior City Planner and public safety expert working for an Indian municipal corporation.
+PRIORITY_SYSTEM_PROMPT = """You are a municipal grievance scoring API. You receive a citizen complaint and return a JSON score.
 
-Your job is to evaluate a citizen grievance and assign an impact score.
+RULES:
+1. You MUST respond with ONLY a JSON object. No other text, no explanations, no markdown.
+2. If the description is empty or unclear, score it as 20 with color #FFFF00.
 
-EVALUATION CRITERIA:
-- Immediate danger to life (live wires, open manholes, gas leaks) → 80-100
-- Infrastructure affecting many people (water outage, road collapse, sewage overflow) → 60-79
-- Quality-of-life issues (streetlight out, pothole, garbage) → 30-59
-- Minor cosmetic or non-urgent issues → 1-29
+SCORING:
+- Danger to life (live wires, gas leaks, open manholes, fire) → 80-100, #FF0000
+- Infrastructure failure (water outage, road collapse, sewage overflow) → 60-79, #FF0000
+- Quality-of-life (streetlight out, pothole, garbage) → 30-59, #FFA500
+- Minor or cosmetic issues → 1-29, #FFFF00
 
-CONTEXT AMPLIFIERS (increase score by 10-20):
-- Near a school, hospital, or place of worship
-- Affects elderly, disabled, or low-income communities
-- Has been unresolved for more than 7 days
-- Multiple similar reports in the area
+AMPLIFIERS (add 10-20 points):
+- Near school, hospital, or worship place
+- Affects vulnerable populations
+- Multiple similar reports
 
-SEVERITY COLOR MAPPING:
-- #FF0000 (Red)    → score 70-100 (Critical / Emergency)
-- #FFA500 (Orange) → score 40-69  (High / Needs Attention)
-- #FFFF00 (Yellow) → score 1-39   (Low / Routine)
+RESPONSE FORMAT (exactly this, nothing else):
+{"impact_score": 75, "severity_color": "#FF0000", "reasoning": "Water main burst affecting 50+ households"}"""
 
-You MUST respond with ONLY a valid JSON object, no extra text. Format:
-{"impact_score": <int 1-100>, "severity_color": "<hex>", "reasoning": "<one sentence>"}"""
+PRIORITY_USER_TEMPLATE = """Complaint: {description}
+Domain: {domain}
+Location: ({lat}, {lng})
 
-PRIORITY_USER_TEMPLATE = """GRIEVANCE DETAILS:
-- Description: {description}
-- Domain: {domain}
-- Location: ({lat}, {lng})
-
-Respond with ONLY the JSON object."""
+Return ONLY the JSON object."""
 
 
 def _parse_priority_json(text: str) -> dict | None:
