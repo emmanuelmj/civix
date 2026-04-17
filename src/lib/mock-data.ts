@@ -36,7 +36,7 @@ function jitter(center: number, range: number) {
 let eventCounter = 0;
 
 function uid() {
-  return `evt-${Date.now().toString(36)}-${(eventCounter++).toString(36)}`;
+  return `evt-${Date.now().toString(36)}-${(eventCounter++).toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 const SEVERITY_COLORS = { standard: "#ca8a04", high: "#dc2626", critical: "#dc2626" };

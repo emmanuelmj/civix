@@ -50,7 +50,7 @@ export default function DashboardPage() {
           if (unresolvedIdx >= 0) {
             copy[unresolvedIdx] = { ...copy[unresolvedIdx], status: "RESOLVED" };
             setLogs(p => [{
-              id: `res-${Date.now().toString(36)}`,
+              id: `res-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
               type: "verification" as const,
               message: `Task closed. ${copy[unresolvedIdx].summary} — resolved.`,
               timestamp: Date.now(),
