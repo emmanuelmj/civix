@@ -11,10 +11,10 @@ export function Sidebar() {
   return (
     <aside
       className="fixed left-0 top-0 bottom-0 w-52 flex flex-col border-r z-30"
-      style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}
+      style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}
     >
       {/* Logo */}
-      <div className="px-4 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+      <div className="px-4 py-4 border-b" style={{ borderColor: "var(--border-light)" }}>
         <div className="flex items-center gap-2.5">
           <div className="relative w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
             style={{ background: "var(--accent-blue-dim)", color: "var(--accent-blue)" }}>
@@ -52,8 +52,8 @@ export function Sidebar() {
       </nav>
 
       {/* System status */}
-      <div className="px-3 py-3 border-t" style={{ borderColor: "var(--border)" }}>
-        <div className="px-2 py-2 rounded-md" style={{ background: "var(--bg-card)" }}>
+      <div className="px-3 py-3 border-t" style={{ borderColor: "var(--border-light)" }}>
+        <div className="px-2 py-2 rounded-md" style={{ background: "var(--bg-surface)" }}>
           <p className="text-[10px] font-mono uppercase tracking-wider mb-1.5" style={{ color: "var(--fg-muted)" }}>
             System
           </p>

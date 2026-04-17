@@ -1,35 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  /* Backgrounds — deep space gray, not pure black */
-  --bg-base: #0d1117;
-  --bg-surface: #161b22;
-  --bg-card: #1c2128;
-  --bg-elevated: #252c35;
+  /* Backgrounds — warm off-white, layered depth */
+  --bg-base: #f0ede8;
+  --bg-surface: #e8e4de;
+  --bg-card: #faf8f5;
+  --bg-elevated: #ffffff;
 
-  /* Text */
-  --fg-primary: #e6edf3;
-  --fg-secondary: #8b949e;
-  --fg-muted: #545d68;
+  /* Text — warm charcoal, not pure black */
+  --fg-primary: #1e1e1e;
+  --fg-secondary: #5c5856;
+  --fg-muted: #9a948d;
 
-  /* Accents — meaningful, not random */
-  --accent-blue: #58a6ff;
-  --accent-blue-dim: #1a3a5c;
-  --accent-crimson: #f85149;
-  --accent-crimson-dim: #5c1a1a;
-  --accent-green: #3fb950;
-  --accent-green-dim: #1a3d22;
-  --accent-amber: #d29922;
-  --accent-amber-dim: #3d2e0a;
+  /* Accents — same meaningful system */
+  --accent-blue: #2563eb;
+  --accent-blue-dim: #dbeafe;
+  --accent-crimson: #dc2626;
+  --accent-crimson-dim: #fee2e2;
+  --accent-green: #16a34a;
+  --accent-green-dim: #dcfce7;
+  --accent-amber: #ca8a04;
+  --accent-amber-dim: #fef9c3;
 
-  /* Borders */
-  --border: #30363d;
-  --border-light: #21262d;
+  /* Borders — subtle warmth */
+  --border: #d6d1ca;
+  --border-light: #e2ddd6;
 
-  /* Glow effects */
-  --glow-blue: 0 0 12px rgba(88, 166, 255, 0.3);
-  --glow-crimson: 0 0 12px rgba(248, 81, 73, 0.3);
-  --glow-green: 0 0 12px rgba(63, 185, 80, 0.3);
+  /* Glow effects — soft colored shadows */
+  --glow-blue: 0 0 12px rgba(37, 99, 235, 0.15);
+  --glow-crimson: 0 0 12px rgba(220, 38, 38, 0.15);
+  --glow-green: 0 0 12px rgba(22, 163, 74, 0.15);
 }
 
 @theme inline {
@@ -45,7 +45,7 @@ body {
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
 
-/* Scrollbar — thin, dark */
+/* Scrollbar — thin, blends in */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -55,7 +55,7 @@ body {
 .mapboxgl-ctrl-attrib { display: none !important; }
 .mapboxgl-ctrl-logo { display: none !important; }
 
-/* Pulse animation for live indicators */
+/* Pulse animation for critical markers */
 @keyframes pulse-ring {
   0% { transform: scale(1); opacity: 0.6; }
   100% { transform: scale(2.5); opacity: 0; }
@@ -69,7 +69,7 @@ body {
   background: inherit;
 }
 
-/* Terminal scrolling effect */
+/* Feed card slide-in */
 @keyframes slide-in {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }

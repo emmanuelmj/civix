@@ -77,7 +77,7 @@ export default function DashboardPage() {
     <div className="flex h-full">
       {/* Left: Ingestion Feed */}
       <div className="w-72 shrink-0 border-r flex flex-col"
-        style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}>
+        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <IngestionFeed items={intake} />
       </div>
 
@@ -85,7 +85,7 @@ export default function DashboardPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Stats bar */}
         <div className="flex items-center gap-6 px-4 py-2 border-b"
-          style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}>
+          style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
           <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
           <StatPill label="Critical" value={stats.critical} color="var(--accent-crimson)" />
           <StatPill label="Resolved" value={stats.resolved} color="var(--accent-green)" />
@@ -111,7 +111,7 @@ export default function DashboardPage() {
 
       {/* Right: Swarm Log */}
       <div className="w-72 shrink-0 border-l flex flex-col"
-        style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}>
+        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <SwarmLog entries={logs} />
       </div>
     </div>

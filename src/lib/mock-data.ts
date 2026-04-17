@@ -39,7 +39,7 @@ function uid() {
   return `evt-${Date.now().toString(36)}-${(eventCounter++).toString(36)}`;
 }
 
-const SEVERITY_COLORS = { standard: "#d29922", high: "#f85149", critical: "#f85149" };
+const SEVERITY_COLORS = { standard: "#ca8a04", high: "#dc2626", critical: "#dc2626" };
 
 export function generatePulseEvent(): PulseEvent {
   const scenario = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];

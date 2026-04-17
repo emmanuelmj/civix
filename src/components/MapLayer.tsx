@@ -25,7 +25,7 @@ export function MapLayer({ events }: MapLayerProps) {
     if (!containerRef.current || mapRef.current) return;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: "mapbox://styles/mapbox/light-v11",
       center: [HYDERABAD.lng, HYDERABAD.lat],
       zoom: 12,
       pitch: 30,
@@ -80,10 +80,10 @@ export function MapLayer({ events }: MapLayerProps) {
           .setLngLat([event.coordinates.lng, event.coordinates.lat])
           .setPopup(new mapboxgl.Popup({ offset: 15, className: "pulse-popup" })
             .setHTML(`
-              <div style="background:#1c2128;color:#e6edf3;padding:8px 12px;border-radius:8px;font-size:12px;max-width:200px;font-family:system-ui;">
+              <div style="background:#faf8f5;color:#1e1e1e;padding:8px 12px;border-radius:8px;font-size:12px;max-width:200px;font-family:system-ui;border:1px solid #d6d1ca;">
                 <div style="font-weight:600;margin-bottom:4px;">${event.summary}</div>
-                <div style="color:#8b949e;font-size:10px;">${event.domain} · ${event.severity.toUpperCase()}</div>
-                ${event.assigned_officer ? `<div style="color:#58a6ff;font-size:10px;margin-top:4px;">→ ${event.assigned_officer.officer_id}</div>` : ""}
+                <div style="color:#5c5856;font-size:10px;">${event.domain} · ${event.severity.toUpperCase()}</div>
+                ${event.assigned_officer ? `<div style="color:#2563eb;font-size:10px;margin-top:4px;">→ ${event.assigned_officer.officer_id}</div>` : ""}
               </div>
             `))
           .addTo(map);
@@ -97,8 +97,8 @@ export function MapLayer({ events }: MapLayerProps) {
           const el = document.createElement("div");
           el.style.cssText = `
             width: 10px; height: 10px; border-radius: 50%;
-            background: #58a6ff; border: 2px solid #1a3a5c;
-            box-shadow: 0 0 8px rgba(88,166,255,0.5);
+            background: #2563eb; border: 2px solid #dbeafe;
+            box-shadow: 0 0 8px rgba(37,99,235,0.3);
           `;
           const marker = new mapboxgl.Marker({ element: el })
             .setLngLat([off.current_lng, off.current_lat])
@@ -129,9 +129,9 @@ export function MapLayer({ events }: MapLayerProps) {
               type: "line",
               source: lineId,
               paint: {
-                "line-color": "#58a6ff",
+                "line-color": "#2563eb",
                 "line-width": 1.5,
-                "line-opacity": 0.4,
+                "line-opacity": 0.35,
                 "line-dasharray": [2, 4],
               },
             });

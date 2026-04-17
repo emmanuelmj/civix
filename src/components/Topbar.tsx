@@ -15,7 +15,7 @@ export function Topbar() {
   return (
     <header
       className="h-11 flex items-center justify-between px-5 border-b shrink-0"
-      style={{ background: "var(--bg-surface)", borderColor: "var(--border)" }}
+      style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}
     >
       <div className="flex items-center gap-3">
         <h1 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--fg-secondary)" }}>
