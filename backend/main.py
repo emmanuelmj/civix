@@ -321,12 +321,13 @@ async def lifespan(app: FastAPI):
     # Initialize Pinecone service
     pinecone_service = PineconeService.get_instance()
 
-    # Start background watcher
+    # Start background watcher — polls Pinecone for new vectors from n8n/Dev 2
     watcher = PineconeWatcher(
         pinecone_service=pinecone_service,
         process_fn=process_event_through_pipeline,
     )
     await watcher.start()
+    logger.info("Pinecone watcher started (polling for new vectors).")
 
     yield
 
