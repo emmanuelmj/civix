@@ -219,22 +219,24 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
           </svg>
         </button>
 
-        {/* Dropdown panel */}
+        {/* Dropdown panel — light theme with scroll */}
         {dropdownOpen && (
           <div
-            className="absolute left-0 z-50 mt-2 rounded-xl overflow-hidden"
+            className="absolute left-0 z-50 mt-2 rounded-xl overflow-y-auto no-scrollbar"
             style={{
-              background: "rgba(0,0,0,0.88)",
+              background: "rgba(255,255,255,0.96)",
               backdropFilter: "blur(24px)",
               WebkitBackdropFilter: "blur(24px)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              border: "1px solid var(--border-light)",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04)",
               width: 260,
+              maxHeight: "70vh",
             }}
           >
             {/* Domain section */}
             <div className="px-4 pt-4 pb-2">
-              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-gray-500">
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em]"
+                style={{ color: "var(--fg-muted)" }}>
                 Domain
               </span>
             </div>
@@ -247,15 +249,15 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
                     onClick={() => toggleDomain(d)}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-150"
                     style={{
-                      background: active ? `${DOMAIN_COLORS[d]}18` : "transparent",
-                      color: active ? "#fff" : "rgba(255,255,255,0.6)",
+                      background: active ? `${DOMAIN_COLORS[d]}14` : "transparent",
+                      color: active ? "var(--fg-primary)" : "var(--fg-secondary)",
                     }}
                   >
                     {/* Custom checkbox */}
                     <span
                       className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
                       style={{
-                        borderColor: active ? DOMAIN_COLORS[d] : "rgba(255,255,255,0.2)",
+                        borderColor: active ? DOMAIN_COLORS[d] : "var(--border)",
                         background: active ? DOMAIN_COLORS[d] : "transparent",
                       }}
                     >
@@ -274,11 +276,12 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
             </div>
 
             {/* Divider */}
-            <div className="mx-4 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+            <div className="mx-4 border-t" style={{ borderColor: "var(--border-light)" }} />
 
             {/* Severity section */}
             <div className="px-4 pt-3 pb-2">
-              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-gray-500">
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em]"
+                style={{ color: "var(--fg-muted)" }}>
                 Severity
               </span>
             </div>
@@ -291,14 +294,14 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
                     onClick={() => toggleSeverity(s)}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono capitalize transition-all duration-150"
                     style={{
-                      background: active ? `${SEVERITY_COLORS[s]}18` : "transparent",
-                      color: active ? "#fff" : "rgba(255,255,255,0.6)",
+                      background: active ? `${SEVERITY_COLORS[s]}14` : "transparent",
+                      color: active ? "var(--fg-primary)" : "var(--fg-secondary)",
                     }}
                   >
                     <span
                       className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
                       style={{
-                        borderColor: active ? SEVERITY_COLORS[s] : "rgba(255,255,255,0.2)",
+                        borderColor: active ? SEVERITY_COLORS[s] : "var(--border)",
                         background: active ? SEVERITY_COLORS[s] : "transparent",
                       }}
                     >
@@ -316,11 +319,12 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
             </div>
 
             {/* Divider */}
-            <div className="mx-4 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+            <div className="mx-4 border-t" style={{ borderColor: "var(--border-light)" }} />
 
             {/* Toggles section */}
             <div className="px-4 pt-3 pb-2">
-              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-gray-500">
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em]"
+                style={{ color: "var(--fg-muted)" }}>
                 Flags
               </span>
             </div>
@@ -329,14 +333,14 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
                 onClick={() => setClusteredOnly(!clusteredOnly)}
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-150"
                 style={{
-                  background: clusteredOnly ? "rgba(168,85,247,0.12)" : "transparent",
-                  color: clusteredOnly ? "#fff" : "rgba(255,255,255,0.6)",
+                  background: clusteredOnly ? "rgba(168,85,247,0.08)" : "transparent",
+                  color: clusteredOnly ? "var(--fg-primary)" : "var(--fg-secondary)",
                 }}
               >
                 <span
                   className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
                   style={{
-                    borderColor: clusteredOnly ? "#a855f7" : "rgba(255,255,255,0.2)",
+                    borderColor: clusteredOnly ? "#a855f7" : "var(--border)",
                     background: clusteredOnly ? "#a855f7" : "transparent",
                   }}
                 >
@@ -352,14 +356,14 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
                 onClick={() => setPanicOnly(!panicOnly)}
                 className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-150"
                 style={{
-                  background: panicOnly ? "rgba(239,68,68,0.12)" : "transparent",
-                  color: panicOnly ? "#fff" : "rgba(255,255,255,0.6)",
+                  background: panicOnly ? "rgba(239,68,68,0.08)" : "transparent",
+                  color: panicOnly ? "var(--fg-primary)" : "var(--fg-secondary)",
                 }}
               >
                 <span
                   className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
                   style={{
-                    borderColor: panicOnly ? "#ef4444" : "rgba(255,255,255,0.2)",
+                    borderColor: panicOnly ? "#ef4444" : "var(--border)",
                     background: panicOnly ? "#ef4444" : "transparent",
                   }}
                 >
@@ -376,15 +380,15 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
             {/* Footer: reset + count */}
             {activeCount > 0 && (
               <>
-                <div className="mx-4 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+                <div className="mx-4 border-t" style={{ borderColor: "var(--border-light)" }} />
                 <div className="flex items-center justify-between px-4 py-3">
-                  <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.4)" }}>
+                  <span className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
                     {activeCount} active
                   </span>
                   <button
                     onClick={resetAll}
-                    className="text-[10px] font-mono font-bold uppercase tracking-wider transition-colors hover:text-white"
-                    style={{ color: "rgba(255,255,255,0.5)" }}
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider transition-colors"
+                    style={{ color: "var(--accent-crimson)" }}
                   >
                     Clear All
                   </button>

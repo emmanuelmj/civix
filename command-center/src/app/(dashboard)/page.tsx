@@ -80,7 +80,7 @@ export default function DashboardPage() {
 
   // Default: "Live Grid" — the main 3-panel dashboard
   return (
-    <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-full min-h-0 relative">
       {/* Mobile tab bar */}
       <div className="flex lg:hidden border-b shrink-0 glass"
         style={{ borderColor: "rgba(0,0,0,0.06)" }}>
@@ -112,17 +112,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Center: Map + Stats — desktop */}
-      <div className="hidden lg:flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
-        <div className="flex items-center gap-6 px-5 py-3 border-b shrink-0 glass"
+      <div className="hidden lg:flex flex-[2] flex-col min-w-0 min-h-0 h-full overflow-hidden">
+        {/* Stats bar — scrollable if it overflows */}
+        <div className="flex items-center gap-4 px-4 py-2.5 border-b shrink-0 glass overflow-x-auto no-scrollbar"
           style={{ borderColor: "rgba(0,0,0,0.06)" }}>
           <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
           <StatPill label="Critical" value={stats.critical} color="var(--accent-crimson)" />
           <StatPill label="Resolved" value={stats.resolved} color="var(--accent-green)" />
-          <StatPill label="Avg Response" value={stats.avgTime} color="var(--fg-secondary)" />
+          <StatPill label="Avg Resp" value={stats.avgTime} color="var(--fg-secondary)" />
           <button
             onClick={handleTrigger}
             disabled={triggering}
-            className="ml-2 px-4 py-2 rounded-md text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
+            className="ml-auto px-4 py-2 rounded-md text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03] shrink-0"
             style={{
               background: triggering ? "var(--bg-elevated)" : "var(--accent-blue)",
               color: triggering ? "var(--fg-muted)" : "#fff",
@@ -132,30 +133,26 @@ export default function DashboardPage() {
             {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
           </button>
           {triggerMsg && (
-            <span className="text-xs font-mono px-2.5 py-1 rounded animate-pulse"
+            <span className="text-xs font-mono px-2.5 py-1 rounded animate-pulse shrink-0"
               style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>
               {triggerMsg}
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs font-mono px-2 py-1 rounded"
-              style={{
-                background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "rgba(220,38,38,0.1)" : "var(--accent-amber-dim)",
-                color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "#dc2626" : "var(--accent-amber)",
-              }}>
-              {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : status === "disconnected" ? "✕ OFFLINE" : "↻ RECONNECTING"}
-            </span>
-          </div>
+          <span className="text-xs font-mono px-2 py-1 rounded shrink-0"
+            style={{
+              background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "rgba(220,38,38,0.1)" : "var(--accent-amber-dim)",
+              color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "#dc2626" : "var(--accent-amber)",
+            }}>
+            {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : status === "disconnected" ? "✕ OFFLINE" : "↻ RECONNECTING"}
+          </span>
         </div>
         {/* Smart Filter Bar */}
         <div className="shrink-0 border-b glass" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
           <FilterBar events={activeEvents} onFilterChange={setFilteredEvents} />
         </div>
-        {/* Map — fluid fill, no fixed dimensions */}
-        <div className="flex-1 min-h-0 min-w-0 relative p-2">
-          <div className="w-full h-full">
-            <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
-          </div>
+        {/* Map — fluid fill */}
+        <div className="flex-1 min-h-0 relative">
+          <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
         </div>
       </div>
 
@@ -168,10 +165,8 @@ export default function DashboardPage() {
       {/* Mobile content — full height, one panel at a time */}
       <div className="flex-1 lg:hidden overflow-hidden min-h-0 min-w-0">
         {mobileTab === "map" && (
-          <div className="h-full w-full relative p-2">
-            <div className="w-full h-full">
-              <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
-            </div>
+          <div className="h-full w-full relative">
+            <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
           </div>
         )}
         {mobileTab === "intake" && (
