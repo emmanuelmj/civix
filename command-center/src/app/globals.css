@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  /* Backgrounds — warm off-white, layered depth */
+  --bg-base: #f0ede8;
+  --bg-surface: #e8e4de;
+  --bg-card: #faf8f5;
+  --bg-elevated: #ffffff;
+
+  /* Text — warm charcoal, not pure black */
+  --fg-primary: #1e1e1e;
+  --fg-secondary: #5c5856;
+  --fg-muted: #9a948d;
+
+  /* Accents — same meaningful system */
+  --accent-blue: #2563eb;
+  --accent-blue-dim: #dbeafe;
+  --accent-crimson: #dc2626;
+  --accent-crimson-dim: #fee2e2;
+  --accent-green: #16a34a;
+  --accent-green-dim: #dcfce7;
+  --accent-amber: #ca8a04;
+  --accent-amber-dim: #fef9c3;
+
+  /* Borders — subtle warmth */
+  --border: #d6d1ca;
+  --border-light: #e2ddd6;
+
+  /* Glow effects — soft colored shadows */
+  --glow-blue: 0 0 12px rgba(37, 99, 235, 0.15);
+  --glow-crimson: 0 0 12px rgba(220, 38, 38, 0.15);
+  --glow-green: 0 0 12px rgba(22, 163, 74, 0.15);
+}
+
+@theme inline {
+  --color-background: var(--bg-base);
+  --color-foreground: var(--fg-primary);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--fg-primary);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* Scrollbar — thin, blends in */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
+
+/* MapLibre GL popup override */
+.maplibregl-popup-content {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border);
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+  padding: 10px 12px !important;
+}
+.maplibregl-popup-tip { border-top-color: var(--bg-card) !important; }
+.maplibregl-ctrl-attrib { font-size: 9px !important; opacity: 0.5; }
+.maplibregl-ctrl-group button { background: var(--bg-card) !important; border-color: var(--border) !important; }
+.maplibregl-ctrl-group button:hover { background: var(--bg-elevated) !important; }
+
+/* Pulse animation for critical markers */
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+.pulse-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: pulse-ring 1.5s ease-out infinite;
+  background: inherit;
+}
+
+/* Feed card slide-in */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.feed-card {
+  animation: slide-in 0.3s ease-out;
+}
