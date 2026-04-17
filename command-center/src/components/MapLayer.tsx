@@ -175,7 +175,7 @@ export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps)
         type: "circle",
         source: "events",
         paint: {
-          "circle-radius": ["match", ["get", "severity"], "critical", 9, "high", 7, 5],
+          "circle-radius": ["match", ["get", "severity"], "critical", 11, "high", 9, 6],
           "circle-color": ["get", "color"],
           "circle-opacity": 0.7,
           "circle-stroke-width": 2,
@@ -190,7 +190,7 @@ export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps)
         source: "events",
         filter: ["==", ["get", "severity"], "critical"],
         paint: {
-          "circle-radius": 16,
+          "circle-radius": 19,
           "circle-color": "#dc2626",
           "circle-opacity": 0.12,
         },
@@ -260,7 +260,7 @@ export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps)
         type: "circle",
         source: "officers",
         paint: {
-          "circle-radius": 5,
+          "circle-radius": 6,
           "circle-color": "#2563eb",
           "circle-stroke-width": 2,
           "circle-stroke-color": "#dbeafe",
@@ -400,7 +400,33 @@ export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps)
   }, [events, syncMarkers]);
 
   return (
-    <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden"
-      style={{ border: "1px solid var(--border)" }} />
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden"
+        style={{ border: "1px solid var(--border)" }} />
+
+      {/* Map Legend */}
+      <div
+        className="absolute bottom-4 left-4 z-10 rounded-lg p-3 space-y-2"
+        style={{
+          background: "rgba(255,255,255,0.90)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+      >
+        <p className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]" style={{ color: "var(--fg-muted)" }}>Legend</p>
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-50" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+          </span>
+          <span className="text-xs font-medium" style={{ color: "var(--fg-secondary)" }}>Pulse Event (Grievance)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex rounded-full h-3 w-3 shrink-0" style={{ background: "#2563eb" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--fg-secondary)" }}>Field Officer</span>
+        </div>
+      </div>
+    </div>
   );
 }

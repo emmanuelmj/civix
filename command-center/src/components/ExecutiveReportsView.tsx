@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useState, useEffect } from "react";
 import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "@/lib/types";
 
 /* ─── Department config ─── */
@@ -86,11 +86,13 @@ function DepartmentCard({
   department,
   index,
   events,
+  onViewReport,
 }: {
   department: (typeof DEPARTMENTS)[number];
   index: number;
   events: PulseEvent[];
-}) {
+  onViewReport?: () => void;
+}){
   const deptEvents = events.filter((e) => e.domain === department.name);
   const active = deptEvents.filter(
     (e) => e.status !== "RESOLVED"
@@ -219,12 +221,148 @@ function DepartmentCard({
 
       {/* View Full Report link */}
       <button
+        onClick={onViewReport}
         className="text-xs font-medium hover:opacity-80 transition-opacity"
         style={{ color: department.color, background: "none", border: "none", cursor: "pointer", padding: 0 }}
       >
         View Full Report →
       </button>
     </div>
+  );
+}
+
+/* ─── Department Slide-Over ─── */
+
+function DepartmentSlideOver({ 
+  name, 
+  color, 
+  events, 
+  onClose 
+}: { 
+  name: string; 
+  color: string; 
+  events: PulseEvent[]; 
+  onClose: () => void;
+}) {
+  const deptEvents = events.filter(e => e.domain === name);
+  const resolved = deptEvents.filter(e => e.status === "RESOLVED").length;
+  const active = deptEvents.filter(e => e.status !== "RESOLVED").length;
+  const critical = deptEvents.filter(e => e.severity === "critical").length;
+  
+  // Get unique officers for this department
+  const officers = Array.from(
+    new Map(
+      deptEvents
+        .filter(e => e.assigned_officer)
+        .map(e => [e.assigned_officer!.officer_id, e.assigned_officer!])
+    ).values()
+  ).slice(0, 3);
+  
+  // close on Escape
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+  
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm" onClick={onClose} />
+      <aside
+        className="fixed inset-y-0 right-0 w-full sm:w-[440px] z-50 flex flex-col overflow-y-auto no-scrollbar"
+        style={{
+          background: "rgba(255,255,255,0.95)",
+          backdropFilter: "blur(40px)",
+          borderLeft: "1px solid var(--border)",
+        }}
+      >
+        {/* header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center gap-3">
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
+            <span className="text-base font-bold" style={{ color: "var(--fg-primary)" }}>{name} Department</span>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100" style={{ color: "var(--fg-secondary)" }}>✕</button>
+        </div>
+        
+        {/* body */}
+        <div className="flex-1 px-6 py-6 space-y-6">
+          {/* KPIs */}
+          <section>
+            <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>Overview</h3>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Active", value: active, color: "var(--accent-amber)" },
+                { label: "Critical", value: critical, color: "var(--accent-crimson)" },
+                { label: "Resolved", value: resolved, color: "var(--accent-green)" },
+              ].map(s => (
+                <div key={s.label} className="rounded-lg p-3" style={{ background: "var(--bg-surface)" }}>
+                  <p className="text-[10px] font-mono uppercase tracking-[0.15em] mb-1" style={{ color: "var(--fg-muted)" }}>{s.label}</p>
+                  <p className="text-xl font-bold tabular-nums" style={{ color: s.color }}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+          
+          {/* 7-Day Trend */}
+          <section>
+            <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>7-Day Historical Trend</h3>
+            <div className="rounded-lg p-4" style={{ background: "var(--bg-surface)" }}>
+              <div className="flex items-end justify-between gap-2" style={{ height: 120 }}>
+                {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day, i) => {
+                  const h = [65, 40, 80, 55, 90, 30, 70][i];
+                  return (
+                    <div key={day} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="w-full rounded-t" style={{ height: h, background: color, opacity: 0.75 }} />
+                      <span className="text-[9px] font-mono" style={{ color: "var(--fg-muted)" }}>{day}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+          
+          {/* Budget Burn Rate */}
+          <section>
+            <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>Budget Burn Rate</h3>
+            <div className="rounded-lg p-4 space-y-3" style={{ background: "var(--bg-surface)" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium" style={{ color: "var(--fg-primary)" }}>Quarterly Allocation</span>
+                <span className="text-sm font-bold tabular-nums" style={{ color: "var(--fg-primary)" }}>₹4.2 Cr</span>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                <div className="h-full rounded-full" style={{ width: "62%", background: color }} />
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>62% utilized</span>
+                <span className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>₹1.6 Cr remaining</span>
+              </div>
+            </div>
+          </section>
+          
+          {/* Top 3 Officers */}
+          <section>
+            <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>Top Active Officers</h3>
+            <div className="space-y-2">
+              {officers.length === 0 ? (
+                <p className="text-sm" style={{ color: "var(--fg-muted)" }}>No officers assigned yet</p>
+              ) : officers.map(off => (
+                <div key={off.officer_id} className="flex items-center gap-3 rounded-lg p-3" style={{ background: "var(--bg-surface)" }}>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold" style={{ background: "rgba(0,122,255,0.08)", color: "var(--accent-blue)" }}>
+                    {(off.name || off.officer_id).slice(-2).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--fg-primary)" }}>{off.name || off.officer_id}</p>
+                    <p className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>{off.officer_id}</p>
+                  </div>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: "var(--accent-green)" }} />
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -240,6 +378,7 @@ export function ExecutiveReportsView({
   intake: IntakeFeedItem[];
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [selectedDept, setSelectedDept] = useState<string | null>(null);
 
   const kpis = useMemo(() => {
     const total = events.length;
@@ -293,12 +432,12 @@ export function ExecutiveReportsView({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="pt-8 pb-6 space-y-8">
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2
-            className="text-lg font-semibold"
+            className="text-xl font-bold"
             style={{ color: "var(--fg-primary)" }}
           >
             Executive Reports
@@ -383,10 +522,20 @@ export function ExecutiveReportsView({
               department={dept}
               index={i}
               events={events}
+              onViewReport={() => setSelectedDept(dept.name)}
             />
           ))}
         </div>
       </div>
+
+      {selectedDept && (
+        <DepartmentSlideOver
+          name={selectedDept}
+          color={DEPARTMENTS.find(d => d.name === selectedDept)?.color ?? "var(--fg-primary)"}
+          events={events}
+          onClose={() => setSelectedDept(null)}
+        />
+      )}
     </div>
   );
 }

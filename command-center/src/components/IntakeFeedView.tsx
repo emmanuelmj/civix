@@ -325,6 +325,92 @@ function DetailPanel({
             </section>
           )}
 
+          {/* ── Enriched Intelligence Sections ── */}
+
+          {/* Sentiment Analysis (expanded) */}
+          <section className="space-y-3">
+            <h3
+              className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
+              style={{ color: "var(--fg-muted)" }}
+            >
+              Sentiment Analysis
+            </h3>
+            <div className="rounded-lg p-4 space-y-3" style={{ background: "var(--bg-surface)" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold" style={{ color: item.panic_flag ? "var(--accent-crimson)" : sentiment ? sentiment.color : "var(--fg-secondary)" }}>
+                  {item.panic_flag ? "High Panic" : sentiment ? sentiment.label : "Not Assessed"}
+                </span>
+                <span className="text-lg font-bold tabular-nums" style={{ color: "var(--fg-primary)" }}>
+                  {item.sentiment_score != null ? `${Math.round(((item.sentiment_score + 1) / 2) * 10)}/10` : "—"}
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                <div className="h-full rounded-full transition-all duration-500" style={{
+                  width: `${item.sentiment_score != null ? Math.round(((item.sentiment_score + 1) / 2) * 100) : 0}%`,
+                  background: item.panic_flag ? "var(--accent-crimson)" : sentiment ? sentiment.color : "var(--fg-muted)",
+                }} />
+              </div>
+            </div>
+          </section>
+
+          {/* Impact Matrix Score */}
+          <section className="space-y-3">
+            <h3
+              className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
+              style={{ color: "var(--fg-muted)" }}
+            >
+              Impact Matrix Score
+            </h3>
+            <div className="rounded-lg p-4" style={{ background: "var(--bg-surface)" }}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium" style={{ color: "var(--fg-secondary)" }}>Severity Impact</span>
+                <span className="text-lg font-bold tabular-nums" style={{ color: "var(--accent-amber)" }}>
+                  {item.sentiment_score != null ? Math.min(100, Math.round(Math.abs(item.sentiment_score) * 85 + 15)) : 42}/100
+                </span>
+              </div>
+              <div className="h-2.5 w-full rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                <div className="h-full rounded-full transition-all duration-500" style={{
+                  width: `${item.sentiment_score != null ? Math.min(100, Math.round(Math.abs(item.sentiment_score) * 85 + 15)) : 42}%`,
+                  background: "var(--accent-amber)",
+                }} />
+              </div>
+            </div>
+          </section>
+
+          {/* AI Recommended Action */}
+          <section className="space-y-3">
+            <h3
+              className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
+              style={{ color: "var(--fg-muted)" }}
+            >
+              AI Recommended Action
+            </h3>
+            <div className="rounded-lg p-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border-light)" }}>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--fg-primary)" }}>
+                Dispatch nearest {domain.toLowerCase()} field officer to verify reported issue. Cross-reference with similar complaints in a 2km radius for systemic pattern detection. Escalate if impact score exceeds 75.
+              </p>
+            </div>
+          </section>
+
+          {/* Linked Media */}
+          <section className="space-y-3">
+            <h3
+              className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
+              style={{ color: "var(--fg-muted)" }}
+            >
+              Linked Media
+            </h3>
+            <div
+              className="w-full h-32 rounded-lg flex items-center justify-center"
+              style={{ background: "var(--bg-surface)", border: "1px dashed var(--border)" }}
+            >
+              <div className="text-center">
+                <span className="text-2xl block mb-1">📎</span>
+                <span className="text-xs font-medium" style={{ color: "var(--fg-muted)" }}>Image Attached</span>
+              </div>
+            </div>
+          </section>
+
           {/* panic flag */}
           {item.panic_flag && (
             <div
