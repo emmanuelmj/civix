@@ -30,6 +30,12 @@ export interface PulseEvent {
   cluster_found?: boolean;
   cluster_id?: string;
   cluster_size?: number;
+  // Citizen & issue metadata
+  citizen_name?: string;
+  citizen_id?: string;
+  issue_type?: string;
+  panic_flag?: boolean;
+  sentiment_score?: number;
 }
 
 export interface SwarmLogEntry {
@@ -42,12 +48,17 @@ export interface SwarmLogEntry {
 
 export interface IntakeFeedItem {
   id: string;
-  channel: "whatsapp" | "twitter" | "portal" | "camera" | "sensor" | "webhook" | "api" | "demo";
+  channel: "whatsapp" | "twitter" | "portal" | "camera" | "sensor" | "webhook" | "api" | "demo" | "blob";
   original_text: string;
   translated_text: string;
   thumbnail?: string;
   timestamp: number;
   coordinates?: Coordinates;
+  citizen_name?: string;
+  citizen_id?: string;
+  issue_type?: string;
+  panic_flag?: boolean;
+  sentiment_score?: number;
 }
 
 export interface PineconeStatus {

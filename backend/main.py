@@ -102,6 +102,12 @@ async def process_event_through_pipeline(event_data: dict[str, Any]) -> dict[str
     channel = event_data.get("channel", "portal")
 
     # ── 1. Broadcast: complaint received ──────────────────────────
+    citizen_name = event_data.get("citizen_name", "Anonymous")
+    citizen_id = event_data.get("citizen_id", "")
+    panic_flag = event_data.get("panic_flag", False)
+    sentiment = event_data.get("sentiment_score", 5)
+    issue_type = event_data.get("issue_type", "")
+
     await manager.broadcast({
         "type": "intake_update",
         "data": {
@@ -111,6 +117,11 @@ async def process_event_through_pipeline(event_data: dict[str, Any]) -> dict[str
             "translated_text": event_data["translated_description"],
             "timestamp": ts,
             "coordinates": event_data["coordinates"],
+            "citizen_name": citizen_name,
+            "citizen_id": citizen_id,
+            "issue_type": issue_type,
+            "panic_flag": panic_flag,
+            "sentiment_score": sentiment,
         },
     })
 
@@ -217,6 +228,11 @@ async def process_event_through_pipeline(event_data: dict[str, Any]) -> dict[str
                 "coordinates": final_state["coordinates"],
                 "reasoning": reasoning,
                 "summary": event_data["translated_description"][:120],
+                "citizen_name": citizen_name,
+                "citizen_id": citizen_id,
+                "issue_type": issue_type,
+                "panic_flag": panic_flag,
+                "sentiment_score": sentiment,
             },
             "assigned_officer": final_state["matched_officer"],
         },

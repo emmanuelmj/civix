@@ -171,14 +171,27 @@ class PineconeService:
 
 # Tries multiple possible field names for each piece of data
 _FIELD_ALIASES: dict[str, list[str]] = {
-    "description": ["description", "text", "complaint", "message", "content", "body"],
-    "translated": ["translated_text", "translated", "english_text", "translation"],
+    "description": [
+        "translated_description", "text", "provided_text", "raw_input",
+        "description", "complaint", "message", "content", "body",
+    ],
+    "original_text": [
+        "raw_input", "provided_text", "text", "description",
+    ],
     "domain": ["domain", "category", "department", "type", "service"],
-    "lat": ["lat", "latitude", "location_lat", "y"],
-    "lng": ["lng", "longitude", "location_lng", "lon", "x"],
-    "channel": ["channel", "source", "intake_source", "platform", "medium"],
+    "issue_type": ["issue_type", "issue", "complaint_type", "sub_category"],
+    "lat": ["latitude", "lat", "location_lat", "y"],
+    "lng": ["longitude", "lng", "location_lng", "lon", "x"],
+    "channel": ["source", "channel", "intake_source", "platform", "medium"],
     "language": ["language", "lang", "original_language", "locale"],
     "timestamp": ["timestamp", "created_at", "time", "date", "ingested_at"],
+    "citizen_id": ["citizen_id", "user_id", "phone", "mobile"],
+    "citizen_name": ["citizen_name", "name", "user_name", "reporter"],
+    "sentiment_score": ["sentiment_score", "sentiment", "emotion_score"],
+    "panic_flag": ["panic_flag", "panic", "emergency", "urgent"],
+    "event_id": ["event_id", "id", "complaint_id", "ticket_id"],
+    "image_url": ["image_url", "image", "photo_url", "attachment"],
+    "audio_url": ["audio_url", "audio", "voice_url", "recording"],
 }
 
 # Normalize raw domain strings → canonical domain
@@ -203,27 +216,78 @@ def _get_field(meta: dict, field: str, default: Any = "") -> Any:
 def extract_metadata(event_id: str, metadata: dict) -> dict[str, Any]:
     """
     Extract PulseState fields from Pinecone vector metadata.
-    Handles multiple possible field naming conventions from the other dev.
+    Matches the actual schema:
+      citizen_id, citizen_name, domain, issue_type, latitude, longitude,
+      provided_text, raw_input, text, translated_description,
+      sentiment_score, panic_flag, source, timestamp, image_url, audio_url
     """
+    # Description: prefer translated_description > text > provided_text > raw_input
     description = _get_field(metadata, "description")
-    translated = _get_field(metadata, "translated") or description
+    original_text = _get_field(metadata, "original_text") or description
+
     raw_domain = str(_get_field(metadata, "domain", "MUNICIPAL")).upper()
-    domain = _DOMAIN_MAP.get(raw_domain, "MUNICIPAL")
-    lat = float(_get_field(metadata, "lat", 17.385))
-    lng = float(_get_field(metadata, "lng", 78.4867))
+    domain = _DOMAIN_MAP.get(raw_domain, raw_domain or "MUNICIPAL")
+
+    # Coordinates: default to central Hyderabad if 0 or missing
+    lat = float(_get_field(metadata, "lat", 0))
+    lng = float(_get_field(metadata, "lng", 0))
+    if lat == 0 or lng == 0:
+        # Default to Charminar area with slight jitter for demo visibility
+        import random
+        lat = 17.3616 + random.uniform(-0.02, 0.02)
+        lng = 78.4747 + random.uniform(-0.02, 0.02)
+
     channel = _get_field(metadata, "channel", "portal")
     language = _get_field(metadata, "language", "en")
-    ts = _get_field(metadata, "timestamp", int(time.time()))
+    ts = _get_field(metadata, "timestamp", "")
+    issue_type = _get_field(metadata, "issue_type", "")
+
+    # Citizen info
+    citizen_id = str(_get_field(metadata, "citizen_id", ""))
+    citizen_name = str(_get_field(metadata, "citizen_name", "Anonymous"))
+
+    # Urgency signals
+    sentiment = _get_field(metadata, "sentiment_score", 5)
+    panic_raw = str(_get_field(metadata, "panic_flag", "false")).lower()
+    panic = panic_raw in ("true", "1", "yes")
+
+    # Media
+    image_url = str(_get_field(metadata, "image_url", ""))
+    audio_url = str(_get_field(metadata, "audio_url", ""))
+
+    # Use event_id from metadata if available (more reliable), else use vector ID
+    real_event_id = str(_get_field(metadata, "event_id", "")) or event_id
+
+    # Parse timestamp — handle ISO 8601 strings
+    ts_epoch: int
+    if isinstance(ts, (int, float)) and ts > 0:
+        ts_epoch = int(ts)
+    elif isinstance(ts, str) and ts:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            ts_epoch = int(dt.timestamp())
+        except (ValueError, TypeError):
+            ts_epoch = int(time.time())
+    else:
+        ts_epoch = int(time.time())
 
     return {
-        "event_id": event_id,
-        "translated_description": str(translated),
-        "original_text": str(description),
+        "event_id": real_event_id,
+        "translated_description": str(description),
+        "original_text": str(original_text),
         "domain": domain,
+        "issue_type": str(issue_type),
         "coordinates": {"lat": lat, "lng": lng},
         "channel": str(channel),
         "language": str(language),
-        "timestamp": int(float(ts)) if ts else int(time.time()),
+        "timestamp": ts_epoch,
+        "citizen_id": citizen_id,
+        "citizen_name": citizen_name,
+        "sentiment_score": int(float(sentiment)) if sentiment else 5,
+        "panic_flag": panic,
+        "image_url": image_url,
+        "audio_url": audio_url,
     }
 
 

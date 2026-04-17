@@ -51,6 +51,11 @@ function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
     cluster_found: pe.cluster_found as boolean | undefined,
     cluster_id: pe.cluster_id as string | undefined,
     cluster_size: pe.cluster_size as number | undefined,
+    citizen_name: pe.citizen_name as string | undefined,
+    citizen_id: pe.citizen_id as string | undefined,
+    issue_type: pe.issue_type as string | undefined,
+    panic_flag: pe.panic_flag as boolean | undefined,
+    sentiment_score: pe.sentiment_score as number | undefined,
   };
 }
 

@@ -11,6 +11,7 @@ const CHANNEL_ICONS: Record<IntakeFeedItem["channel"], string> = {
   webhook: "⚡",
   api: "⌘",
   demo: "▶",
+  blob: "📄",
 };
 
 const CHANNEL_COLORS: Record<IntakeFeedItem["channel"], string> = {
@@ -22,6 +23,7 @@ const CHANNEL_COLORS: Record<IntakeFeedItem["channel"], string> = {
   webhook: "var(--accent-crimson)",
   api: "var(--accent-blue)",
   demo: "var(--fg-muted)",
+  blob: "var(--accent-green)",
 };
 
 interface IngestionFeedProps {
