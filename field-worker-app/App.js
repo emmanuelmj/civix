@@ -182,22 +182,21 @@ export default function App() {
     setAppState(4);
   };
 
+  // Shared capture-success handler — called by both the real camera and the web simulator
+  const handleCaptureSuccess = (base64Uri = null) => {
+    setCapturedImage(base64Uri); // null = web placeholder thumbnail
+    setVerifyPhase('processing');
+    setTimeout(() => setVerifyPhase('success'), 3000);
+  };
+
   const takePhoto = async () => {
     if (!cameraRef.current) return;
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6 });
-      setCapturedImage(`data:image/jpeg;base64,${photo.base64}`);
-      setVerifyPhase('processing');
-      setTimeout(() => setVerifyPhase('success'), 3000);
+      handleCaptureSuccess(`data:image/jpeg;base64,${photo.base64}`);
     } catch {
-      simulateCapture();
+      handleCaptureSuccess(null);
     }
-  };
-
-  const simulateCapture = () => {
-    setCapturedImage(null); // web placeholder
-    setVerifyPhase('processing');
-    setTimeout(() => setVerifyPhase('success'), 3000);
   };
 
   const returnToDashboard = () => {
@@ -348,25 +347,25 @@ export default function App() {
 
       // ── 4: VERIFICATION ──────────────────────────────────────────────────
       case 4:
-        // Camera live view
-        if (verifyPhase === 'camera') {
-          // Web → always show simulation fallback
-          if (Platform.OS === 'web') {
-            return (
-              <View style={s.camFallback}>
-                <View style={s.camFallbackFrame}>
-                  <View style={s.camCornerTL} /><View style={s.camCornerTR} />
-                  <View style={s.camCornerBL} /><View style={s.camCornerBR} />
-                  <Text style={s.camFallbackIcon}>📷</Text>
-                  <Text style={s.camFallbackText}>Camera unavailable on web</Text>
-                </View>
-                <TouchableOpacity style={s.simBtn} onPress={simulateCapture} activeOpacity={0.85}>
-                  <Text style={s.simBtnText}>SIMULATE CAPTURE (WEB DEMO)</Text>
-                </TouchableOpacity>
+        // ── Web-first guard: skip all camera APIs on web ───────────────────
+        if (Platform.OS === 'web' && verifyPhase === 'camera') {
+          return (
+            <View style={s.camFallback}>
+              <View style={s.camFallbackFrame}>
+                <View style={s.camCornerTL} /><View style={s.camCornerTR} />
+                <View style={s.camCornerBL} /><View style={s.camCornerBR} />
+                <Text style={s.camFallbackIcon}>📷</Text>
+                <Text style={s.camFallbackText}>Camera disabled for Web Demo.</Text>
               </View>
-            );
-          }
+              <TouchableOpacity style={s.simBtn} onPress={() => handleCaptureSuccess(null)} activeOpacity={0.85}>
+                <Text style={s.simBtnText}>SIMULATE CAPTURE (WEB DEMO)</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
 
+        // ── Native camera (permission flow) ───────────────────────────────
+        if (verifyPhase === 'camera') {
           // Permission not yet determined — show loading
           if (!camPerm) {
             return (
@@ -395,7 +394,7 @@ export default function App() {
                 >
                   <Text style={s.completedBtnText}>GRANT CAMERA PERMISSION</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={simulateCapture} style={{ marginTop: 16 }}>
+                <TouchableOpacity onPress={() => handleCaptureSuccess(null)} style={{ marginTop: 16 }}>
                   <Text style={{ color: T.textSecondary, fontSize: 13 }}>SIMULATE CAPTURE (WEB DEMO)</Text>
                 </TouchableOpacity>
               </View>
