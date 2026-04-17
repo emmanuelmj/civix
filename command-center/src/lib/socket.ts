@@ -275,14 +275,14 @@ export function usePulseStream(): UsePulseStreamReturn {
   return { events, logs, intake, status };
 }
 
-// ── Trigger Analysis — call backend demo burst ─────────────────────
+// ── Trigger Analysis — fires real complaints through LangGraph swarm ────
 
 export async function triggerAnalysis(): Promise<{
   ok: boolean;
   message: string;
 }> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/demo-burst?count=25`, {
+    const res = await fetch(`${API_URL}/api/v1/trigger-swarm?count=5`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -292,7 +292,7 @@ export async function triggerAnalysis(): Promise<{
     const data = await res.json();
     return {
       ok: true,
-      message: `${data.events_fired} events fired via LangGraph swarm`,
+      message: `${data.events_fired}/${data.total} events processed via LangGraph`,
     };
   } catch {
     return { ok: false, message: "Backend unreachable." };

@@ -255,6 +255,60 @@ async def trigger_analysis(payload: TriggerAnalysisRequest) -> DispatchResponse:
 
 import random
 import asyncio
+import uuid
+
+# ---------------------------------------------------------------------------
+# Real LangGraph Batch — fires complaints through the full swarm pipeline
+# ---------------------------------------------------------------------------
+
+SWARM_COMPLAINTS: list[dict[str, Any]] = [
+    {"desc": "Exposed live wire dangling over school playground in Gachibowli", "domain": "ELECTRICITY", "lat": 17.4401, "lng": 78.3489},
+    {"desc": "Water main burst flooding MG Road near Secunderabad station", "domain": "WATER", "lat": 17.4399, "lng": 78.5018},
+    {"desc": "Large pothole causing traffic jam at Kukatpally junction", "domain": "TRAFFIC", "lat": 17.4947, "lng": 78.3996},
+    {"desc": "Garbage overflow near Charminar for 5 days strong smell", "domain": "MUNICIPAL", "lat": 17.3616, "lng": 78.4747},
+    {"desc": "Crane operating without safety perimeter near hospital", "domain": "CONSTRUCTION", "lat": 17.4156, "lng": 78.4347},
+    {"desc": "Sewage overflow into Malkajgiri residential area", "domain": "WATER", "lat": 17.4534, "lng": 78.5267},
+    {"desc": "Gas leak at LPG distribution center Kukatpally", "domain": "EMERGENCY", "lat": 17.4849, "lng": 78.3942},
+    {"desc": "Building wall collapse in Old City after rainfall", "domain": "EMERGENCY", "lat": 17.3604, "lng": 78.4736},
+    {"desc": "Sparking electricity pole during rain Kondapur", "domain": "ELECTRICITY", "lat": 17.4632, "lng": 78.3522},
+    {"desc": "Chemical spill at Jeedimetla industrial area", "domain": "EMERGENCY", "lat": 17.5085, "lng": 78.4498},
+]
+
+
+@app.post("/api/v1/trigger-swarm")
+async def trigger_swarm(count: int = 5) -> dict[str, Any]:
+    """
+    Fires N complaints through the REAL LangGraph pipeline.
+    Each event goes through: Auditor → Priority (LLM) → Dispatch.
+    Events appear on the dashboard one by one as they complete.
+    """
+    n = min(count, len(SWARM_COMPLAINTS))
+    picked = random.sample(SWARM_COMPLAINTS, n)
+    results: list[dict[str, Any]] = []
+
+    for s in picked:
+        eid = str(uuid.uuid4())
+        payload = TriggerAnalysisRequest(
+            event_id=eid,
+            translated_description=s["desc"],
+            domain=s["domain"],
+            coordinates=Coordinates(lat=s["lat"], lng=s["lng"]),
+        )
+        try:
+            result = await trigger_analysis(payload)
+            results.append({"event_id": eid, "status": "ok", "score": result.data["pulse_event"]["impact_score"]})
+        except Exception as e:
+            logger.error(f"Swarm event {eid} failed: {e}")
+            results.append({"event_id": eid, "status": "error", "error": str(e)})
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    logger.info(f"Trigger-swarm complete: {ok_count}/{n} events processed via LangGraph.")
+    return {"status": "ok", "events_fired": ok_count, "total": n, "results": results}
+
+
+# ---------------------------------------------------------------------------
+# Demo Burst — instant dense population (no LLM calls, for quick fills)
+# ---------------------------------------------------------------------------
 
 DEMO_SCENARIOS: list[dict[str, Any]] = [
     {"desc": "Exposed live wire dangling over school playground in Gachibowli", "domain": "ELECTRICITY", "lat": 17.4401, "lng": 78.3489, "score": 92, "cluster": True},
