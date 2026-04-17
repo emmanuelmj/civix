@@ -1,101 +1,72 @@
 /**
  * App.js — Civix Field Worker
- * ============================
+ * ════════════════════════════
  * 5-state linear demo flow:
- *   SPLASH → DASHBOARD → RECENT_ISSUES → ACTIVE_TASK → VERIFICATION
+ *   0: SPLASH  →  1: LOGIN  →  2: DASHBOARD  →  3: ACTIVE_TASK  →  4: VERIFICATION
  *
- * All screens live in this file as inline sub-components.
- * CameraScreen is kept separate for isolation.
+ * All overlay/modal UI uses position:'absolute' Views — never React Native <Modal>.
+ * This keeps every overlay clipped inside the PhoneFrame bounding box on web.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, StatusBar, ScrollView,
-  ActivityIndicator, Image, Platform,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  SafeAreaView, StatusBar, ScrollView, ActivityIndicator,
+  Image, Platform, Linking, Alert,
 } from 'react-native';
-import { useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
-import CameraScreen from './components/CameraScreen';
-import PhoneFrame   from './components/PhoneFrame';
+import PhoneFrame from './components/PhoneFrame';
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const OFFICER_ID   = 'OP-441';
 const OFFICER_ROLE = 'Road Infrastructure';
 
-// ─── APP STATES ────────────────────────────────────────────────────────────
-const STATES = {
-  SPLASH:        'SPLASH',
-  DASHBOARD:     'DASHBOARD',
-  RECENT_ISSUES: 'RECENT_ISSUES',
-  ACTIVE_TASK:   'ACTIVE_TASK',
-  VERIFICATION:  'VERIFICATION',
-};
-
-// ─── MOCK DATA — role-filtered for Road Worker (OP-441) ────────────────────
-const ROAD_DISPATCHES = [
+// ─── MOCK DATA (role-filtered — road worker only) ─────────────────────────────
+const DISPATCHES = [
   {
     id: 'rd-001',
     title: 'Pothole Collapse — NH65',
-    description: 'Large pothole collapse near Tolichowki flyover. 3 vehicles damaged. Peak-hour traffic building rapidly.',
+    description: 'Large pothole near Tolichowki flyover. 3 vehicles damaged. Peak-hour traffic building.',
     direction: 'Proceed 1.2km North on NH-65 to Tolichowki Flyover Junction',
     distance: '1.2 km',
     priority: 'HIGH',
+    lat: 17.4482, lng: 78.3914,
     time: '08:30',
   },
   {
     id: 'rd-002',
     title: 'Road Flooding — Sector 7',
-    description: 'Storm water overflow across Sector 7 main road. Multiple vehicles stalled. Emergency diversion needed immediately.',
+    description: 'Storm water overflow across Sector 7 main road. Emergency diversion needed.',
     direction: 'Proceed 0.8km South-West to Sector 7 Junction, Banjara Hills',
     distance: '0.8 km',
     priority: 'CRITICAL',
+    lat: 17.4150, lng: 78.4480,
     time: '09:15',
   },
   {
     id: 'rd-003',
     title: 'Fallen Tree — Main Boulevard',
-    description: "Large tree blocking both lanes after last night's rain. Emergency diversion setup required.",
-    direction: 'Proceed 2.4km East on Main Boulevard towards Jubilee Hills Check Post',
+    description: "Large tree blocking both lanes after last night's rain. Diversion required.",
+    direction: 'Proceed 2.4km East on Main Boulevard towards Jubilee Hills',
     distance: '2.4 km',
     priority: 'MODERATE',
+    lat: 17.4325, lng: 78.4072,
     time: '09:48',
   },
   {
     id: 'rd-004',
     title: 'Damaged Road Divider — Ring Road',
-    description: 'Concrete divider partially collapsed after vehicle collision. Oncoming traffic at risk.',
+    description: 'Concrete divider partially collapsed after vehicle collision. Traffic at risk.',
     direction: 'Proceed 3.1km North on Outer Ring Road, Exit 14-B near Kondapur',
     distance: '3.1 km',
     priority: 'MODERATE',
+    lat: 17.4608, lng: 78.3647,
     time: '10:20',
   },
 ];
 
-const INITIAL_ACTIVE = [
-  {
-    id: 'ai-001',
-    title: 'Road Barrier — Hitech City',
-    description: 'Safety barrier fallen across IT corridor road. Multiple vehicles slowed.',
-    direction: 'Proceed 4.0km West on Hitech City Main Road to Cybergate Junction',
-    distance: '4.0 km',
-    status: 'EN_ROUTE',
-    acceptedAt: '07:50',
-    priority: 'MODERATE',
-  },
-  {
-    id: 'ai-002',
-    title: 'Waterlogging — Jubilee Hills Rd 45',
-    description: 'Severe waterlogging on Road 45, Jubilee Hills. Blocking residential traffic.',
-    direction: 'Proceed 2.1km North-East to Road 45, Jubilee Hills near Hotel Taj',
-    distance: '2.1 km',
-    status: 'PENDING',
-    acceptedAt: '08:10',
-    priority: 'HIGH',
-  },
-];
-
-// Priority badge colour map
+// Priority colour map
 const PRI = {
   CRITICAL: { bg: '#FEF2F2', text: '#DC2626', border: '#FCA5A5' },
   HIGH:     { bg: '#FFFBEB', text: '#D97706', border: '#FCD34D' },
@@ -103,695 +74,658 @@ const PRI = {
   LOW:      { bg: '#F0FDF4', text: '#16A34A', border: '#BBF7D0' },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ROOT COMPONENT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [appState,      setAppState]      = useState(STATES.SPLASH);
-  const [dutyModal,     setDutyModal]     = useState(false);
-  const [menuVisible,   setMenuVisible]   = useState(false);
-  const [activeIssues,  setActiveIssues]  = useState(INITIAL_ACTIVE);
-  const [selectedTask,  setSelectedTask]  = useState(null);
-  // verifyPhase: 'idle' | 'camera' | 'processing' | 'success'
+  // 0=Splash 1=Login 2=Dashboard 3=ActiveTask 4=Verification
+  const [appState,      setAppState]      = useState(0);
+  const [activeTask,    setActiveTask]    = useState(null);
+  const [activeIssues,  setActiveIssues]  = useState([]);
+
+  // Dashboard overlays (all position:absolute, no Modal portals)
+  const [dutyOverlay,   setDutyOverlay]   = useState(false);
+  const [menuOpen,      setMenuOpen]      = useState(false);
+
+  // Active task — support request overlay
+  const [supportOpen,   setSupportOpen]   = useState(false);
+  const [supportText,   setSupportText]   = useState('');
+  const [supportSent,   setSupportSent]   = useState(false);
+
+  // Verification sub-phases: 'idle' | 'camera' | 'processing' | 'success'
   const [verifyPhase,   setVerifyPhase]   = useState('idle');
   const [capturedImage, setCapturedImage] = useState(null);
 
+  // Camera permissions
   const [camPerm, requestCamPerm] = useCameraPermissions();
+  const cameraRef = useRef(null);
 
-  // ── Splash auto-advance ───────────────────────────────────────────────────
+  // ── Auto-advance: Splash → Login ───────────────────────────────────────────
   useEffect(() => {
-    if (appState !== STATES.SPLASH) return;
-    const t = setTimeout(() => {
-      setAppState(STATES.DASHBOARD);
-      setDutyModal(true);
-    }, 2500);
+    if (appState !== 0) return;
+    const t = setTimeout(() => setAppState(1), 2000);
     return () => clearTimeout(t);
   }, [appState]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const goOnDuty = () => setDutyModal(false);
+  // ── Show duty popup when arriving at Dashboard ─────────────────────────────
+  useEffect(() => {
+    if (appState === 2) {
+      setDutyOverlay(true);
+      setSupportSent(false);
+    }
+  }, [appState]);
 
-  const acceptDispatch = (dispatch) => {
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleLogin = () => setAppState(2);
+
+  const acceptDispatch = (d) => {
     const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-    setActiveIssues(prev => [{ ...dispatch, status: 'EN_ROUTE', acceptedAt: now }, ...prev]);
-    setAppState(STATES.RECENT_ISSUES);
+    const task = { ...d, status: 'EN_ROUTE', acceptedAt: now };
+    setActiveIssues(prev => [task, ...prev]);
+    setActiveTask(task);
+    setAppState(3);
   };
 
-  const selectTask = (task) => {
-    setSelectedTask(task);
+  const openDirections = (task) => {
+    Linking.openURL(`https://maps.google.com/?q=${task.lat},${task.lng}`);
+  };
+
+  const submitSupport = () => {
+    setSupportOpen(false);
+    setSupportText('');
+    setSupportSent(true);
+  };
+
+  const handleTaskCompleted = async () => {
+    if (Platform.OS !== 'web' && !camPerm?.granted) {
+      await requestCamPerm();
+    }
     setVerifyPhase('idle');
     setCapturedImage(null);
-    setAppState(STATES.ACTIVE_TASK);
+    setAppState(4);
   };
 
-  const taskCompleted = async () => {
-    if (Platform.OS !== 'web' && !camPerm?.granted) await requestCamPerm();
-    setAppState(STATES.VERIFICATION);
+  const takePhoto = async () => {
+    if (!cameraRef.current) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6 });
+      setCapturedImage(`data:image/jpeg;base64,${photo.base64}`);
+      setVerifyPhase('processing');
+      setTimeout(() => setVerifyPhase('success'), 3000);
+    } catch {
+      simulateCapture();
+    }
   };
 
-  // Called by CameraScreen with base64 string (or null on web demo)
-  const handlePhotoCapture = (base64) => {
-    setCapturedImage(base64);
+  const simulateCapture = () => {
+    setCapturedImage(null); // web placeholder
     setVerifyPhase('processing');
     setTimeout(() => setVerifyPhase('success'), 3000);
   };
 
   const returnToDashboard = () => {
-    if (selectedTask) setActiveIssues(p => p.filter(t => t.id !== selectedTask.id));
-    setSelectedTask(null);
+    if (activeTask) setActiveIssues(prev => prev.filter(t => t.id !== activeTask.id));
+    setActiveTask(null);
     setCapturedImage(null);
     setVerifyPhase('idle');
-    setAppState(STATES.DASHBOARD);
+    setAppState(2);
   };
 
-  const goBack = () => {
-    // Block back navigation during AI processing / success
-    if (appState === STATES.VERIFICATION && verifyPhase !== 'idle') return;
-    const map = {
-      [STATES.RECENT_ISSUES]: STATES.DASHBOARD,
-      [STATES.ACTIVE_TASK]:   STATES.RECENT_ISSUES,
-      [STATES.VERIFICATION]:  STATES.ACTIVE_TASK,
-    };
-    setAppState(map[appState] ?? STATES.DASHBOARD);
-  };
-
-  // ── Screen renderer ───────────────────────────────────────────────────────
+  // ── Screen renderer ────────────────────────────────────────────────────────
   const renderScreen = () => {
     switch (appState) {
 
-      case STATES.SPLASH:
-        return <SplashScreen />;
-
-      case STATES.DASHBOARD:
+      // ── 0: SPLASH ───────────────────────────────────────────────────────
+      case 0:
         return (
-          <DashboardScreen
-            dispatches={ROAD_DISPATCHES}
-            onAccept={acceptDispatch}
-            onRecentIssues={() => setAppState(STATES.RECENT_ISSUES)}
-            onGoOffDuty={() => setAppState(STATES.SPLASH)}
-            onMenuOpen={() => setMenuVisible(true)}
-          />
+          <View style={s.splashRoot}>
+            <View style={s.logoRow}>
+              <Text style={s.logoText}>CIVIX</Text>
+              <View style={s.logoDot} />
+            </View>
+            <Text style={s.logoSub}>FIELD OPERATIONS</Text>
+            <ActivityIndicator size="large" color={T.accent} style={{ marginTop: 40 }} />
+            <Text style={s.splashHint}>Initializing secure connection…</Text>
+          </View>
         );
 
-      case STATES.RECENT_ISSUES:
+      // ── 1: LOGIN ─────────────────────────────────────────────────────────
+      case 1:
+        return <LoginScreen onLogin={handleLogin} />;
+
+      // ── 2: DASHBOARD ─────────────────────────────────────────────────────
+      case 2:
         return (
-          <RecentIssuesScreen
-            tasks={activeIssues}
-            onSelect={selectTask}
-            onBack={goBack}
-          />
+          <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
+            {/* Header */}
+            <View style={s.header}>
+              <TouchableOpacity onPress={() => setMenuOpen(true)} hitSlop={HIT}>
+                <View style={s.ham}>
+                  <View style={s.hamLine} />
+                  <View style={[s.hamLine, { width: 16 }]} />
+                  <View style={s.hamLine} />
+                </View>
+              </TouchableOpacity>
+              <Text style={s.headerTitle}>CIVIX</Text>
+              <View style={s.liveRow}>
+                <View style={s.liveDot} />
+                <Text style={s.liveText}>LIVE</Text>
+              </View>
+            </View>
+
+            {/* Section label */}
+            <View style={s.sectionRow}>
+              <Text style={s.sectionLabel}>AWAITING DISPATCHES</Text>
+              <View style={s.roleBadge}>
+                <Text style={s.roleBadgeText}>🚧 ROAD WORKER</Text>
+              </View>
+            </View>
+
+            {/* Dispatch list */}
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16 }}>
+              {DISPATCHES.map(d => (
+                <DispatchCard key={d.id} d={d} onAccept={() => acceptDispatch(d)} />
+              ))}
+            </ScrollView>
+
+            {/* Bottom bar */}
+            <View style={s.bottomBar}>
+              <TouchableOpacity style={s.recentBtn} onPress={() => setAppState(3)} activeOpacity={0.85}>
+                <Text style={s.recentBtnText}>📋  RECENT ISSUES</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.offDutyBtn} onPress={() => setAppState(0)} activeOpacity={0.85}>
+                <Text style={s.offDutyBtnText}>GO OFF DUTY</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
         );
 
-      case STATES.ACTIVE_TASK:
+      // ── 3: ACTIVE TASK ───────────────────────────────────────────────────
+      case 3:
         return (
-          <ActiveTaskScreen
-            task={selectedTask}
-            onCompleted={taskCompleted}
-            onBack={goBack}
-          />
+          <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
+            {/* Header with back */}
+            <View style={s.header}>
+              <TouchableOpacity onPress={() => setAppState(2)} hitSlop={HIT} style={s.backBtn}>
+                <Text style={s.backArrow}>←</Text>
+                <Text style={s.backLabel}>Back</Text>
+              </TouchableOpacity>
+              <Text style={s.headerTitle}>ACTIVE TASK</Text>
+              <View style={{ width: 70 }} />
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+              {/* Task detail card */}
+              {activeTask ? (
+                <TaskDetailCard task={activeTask} />
+              ) : (
+                <View style={s.emptyCard}>
+                  <Text style={s.emptyText}>No active task selected.</Text>
+                  <Text style={s.emptyHint}>Accept a dispatch from the Dashboard.</Text>
+                </View>
+              )}
+
+              {supportSent && (
+                <View style={s.toastCard}>
+                  <Text style={s.toastText}>✅  Support request submitted successfully.</Text>
+                </View>
+              )}
+
+              {/* Action buttons */}
+              <TouchableOpacity
+                style={s.dirBtn}
+                onPress={() => activeTask && openDirections(activeTask)}
+                activeOpacity={0.85}
+              >
+                <Text style={s.dirBtnText}>🗺  GET DIRECTIONS</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.supportBtn} onPress={() => setSupportOpen(true)} activeOpacity={0.85}>
+                <Text style={s.supportBtnText}>🤝  REQUEST SUPPORT</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* TASK COMPLETED — always at bottom */}
+            <View style={s.bottomBar}>
+              <TouchableOpacity style={s.completedBtn} onPress={handleTaskCompleted} activeOpacity={0.85}>
+                <Text style={s.completedBtnText}>✓  TASK COMPLETED</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
         );
 
-      case STATES.VERIFICATION:
-        if (verifyPhase === 'camera')
+      // ── 4: VERIFICATION ──────────────────────────────────────────────────
+      case 4:
+        // Camera live view
+        if (verifyPhase === 'camera') {
+          const canUseCamera = Platform.OS !== 'web' && camPerm?.granted;
+          if (canUseCamera) {
+            return (
+              <View style={{ flex: 1, backgroundColor: '#000' }}>
+                <CameraView style={{ flex: 1 }} ref={cameraRef} facing="back">
+                  <View style={s.camOverlay}>
+                    <TouchableOpacity style={s.camShutter} onPress={takePhoto} activeOpacity={0.85}>
+                      <View style={s.camShutterInner} />
+                    </TouchableOpacity>
+                  </View>
+                </CameraView>
+              </View>
+            );
+          }
+          // Web / no permission fallback — immediately simulate
           return (
-            <CameraScreen
-              onCapture={handlePhotoCapture}
-              onClose={() => setVerifyPhase('idle')}
-            />
+            <View style={s.camFallback}>
+              <View style={s.camFallbackFrame}>
+                <View style={s.camCornerTL} /><View style={s.camCornerTR} />
+                <View style={s.camCornerBL} /><View style={s.camCornerBR} />
+                <Text style={s.camFallbackIcon}>📷</Text>
+                <Text style={s.camFallbackText}>Camera unavailable on web</Text>
+              </View>
+              <TouchableOpacity style={s.simBtn} onPress={simulateCapture} activeOpacity={0.85}>
+                <Text style={s.simBtnText}>SIMULATE CAPTURE (WEB DEMO)</Text>
+              </TouchableOpacity>
+            </View>
           );
+        }
+
+        // Idle / processing / success
         return (
-          <VerificationScreen
-            phase={verifyPhase}
-            capturedImage={capturedImage}
-            taskTitle={selectedTask?.title}
-            onOpenCamera={() => setVerifyPhase('camera')}
-            onReturn={returnToDashboard}
-            onBack={goBack}
-          />
+          <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
+            {verifyPhase === 'idle' && (
+              <View style={s.header}>
+                <TouchableOpacity onPress={() => setAppState(3)} hitSlop={HIT} style={s.backBtn}>
+                  <Text style={s.backArrow}>←</Text>
+                  <Text style={s.backLabel}>Back</Text>
+                </TouchableOpacity>
+                <Text style={s.headerTitle}>VERIFICATION</Text>
+                <View style={{ width: 70 }} />
+              </View>
+            )}
+
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              {verifyPhase === 'idle' && (
+                <>
+                  <View style={s.verifyIconWrap}>
+                    <Text style={{ fontSize: 44 }}>📸</Text>
+                  </View>
+                  <Text style={s.verifyTitle}>Photo Verification Required</Text>
+                  <Text style={s.verifyDesc}>
+                    Take a live photo to confirm the issue is resolved.{'\n'}
+                    This triggers automatic fund release via the AI Swarm.
+                  </Text>
+                  {activeTask && (
+                    <View style={s.taskChip}>
+                      <Text style={s.taskChipText} numberOfLines={1}>📌  {activeTask.title}</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={[s.completedBtn, { width: '100%', marginTop: 32 }]}
+                    onPress={() => setVerifyPhase('camera')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={s.completedBtnText}>PHOTO VERIFICATION</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {(verifyPhase === 'processing' || verifyPhase === 'success') && (
+                <>
+                  {/* Thumbnail */}
+                  <View style={s.thumbWrap}>
+                    {capturedImage ? (
+                      <Image source={{ uri: capturedImage }} style={s.thumb} resizeMode="cover" />
+                    ) : (
+                      <View style={[s.thumb, { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ fontSize: 40 }}>📷</Text>
+                      </View>
+                    )}
+                    {verifyPhase === 'success' && (
+                      <View style={s.thumbCheck}><Text style={{ fontSize: 18, color: '#fff', fontWeight: '900' }}>✓</Text></View>
+                    )}
+                  </View>
+
+                  {verifyPhase === 'processing' && (
+                    <>
+                      <ActivityIndicator size="large" color={T.accent} style={{ marginBottom: 16 }} />
+                      <Text style={s.processingTitle}>AI Swarm Verifying Resolution…</Text>
+                      <Text style={s.processingHint}>Analyzing photo, GPS & incident data</Text>
+                    </>
+                  )}
+
+                  {verifyPhase === 'success' && (
+                    <View style={{ alignItems: 'center', width: '100%' }}>
+                      <Text style={{ fontSize: 38, marginBottom: 10 }}>✅</Text>
+                      <Text style={s.successTitle}>Verification Successful</Text>
+                      <Text style={s.successSub}>Funds Released</Text>
+                      <View style={s.successCard}>
+                        <Text style={s.successCardText}>
+                          AI Swarm confirmed the resolution. Incident closed and payment processed automatically.
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={[s.completedBtn, { width: '100%' }]} onPress={returnToDashboard} activeOpacity={0.85}>
+                        <Text style={s.completedBtnText}>RETURN TO DASHBOARD</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+          </SafeAreaView>
         );
 
       default:
-        return <SplashScreen />;
+        return null;
     }
   };
 
+  // ── Root render — position:relative container traps all overlays ───────────
   return (
     <PhoneFrame>
-      {/*
-       * root.container has position:'relative' + overflow:'hidden'.
-       * This creates a strict bounding box so that absolutely-positioned
-       * overlays (duty modal, hamburger drawer) are clipped inside the
-       * phone frame and never bleed out to the browser viewport.
-       */}
-      <View style={root.container}>
+      <SafeAreaView style={s.root}>
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         {renderScreen()}
 
-        {/* ── GO ON DUTY overlay — bounded inside phone frame ──────────── */}
-        {appState === STATES.DASHBOARD && dutyModal && (
-          <View style={root.modalOverlay}>
-            <View style={root.modalCard}>
-              <View style={root.mLogoRow}>
-                <Text style={root.mLogo}>CIVIX</Text>
-                <View style={root.mLogoDot} />
+        {/* ── GO ON DUTY overlay (Dashboard only) ────────────────────────── */}
+        {appState === 2 && dutyOverlay && (
+          <View style={s.overlayBg}>
+            <View style={s.overlayCard}>
+              <View style={s.logoRow}>
+                <Text style={s.logoText}>CIVIX</Text>
+                <View style={s.logoDot} />
               </View>
-              <Text style={root.mSub}>Field Operations Ready</Text>
-              <View style={root.mDivider} />
+              <Text style={s.logoSub}>Field Operations Ready</Text>
+              <View style={{ height: 1, backgroundColor: T.border, marginVertical: 14 }} />
               <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
               <InfoRow label="ROLE"        value={OFFICER_ROLE} />
               <InfoRow label="DEPARTMENT"  value="Field Operations" />
-              <TouchableOpacity style={root.dutyBtn} onPress={goOnDuty} activeOpacity={0.85}>
-                <Text style={root.dutyBtnText}>GO ON DUTY</Text>
+              <TouchableOpacity style={s.dutyBtn} onPress={() => setDutyOverlay(false)} activeOpacity={0.85}>
+                <Text style={s.dutyBtnText}>GO ON DUTY</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* ── HAMBURGER MENU DRAWER — slides in from left, stays inside frame */}
-        {appState === STATES.DASHBOARD && menuVisible && (
+        {/* ── HAMBURGER DRAWER (Dashboard only) ──────────────────────────── */}
+        {appState === 2 && menuOpen && (
           <>
-            {/* Dim overlay — tapping it closes the drawer */}
-            <TouchableOpacity
-              style={root.drawerOverlay}
-              onPress={() => setMenuVisible(false)}
-              activeOpacity={1}
-            />
-            {/* Drawer panel */}
-            <View style={root.drawerPanel}>
-              <View style={root.drawerHandle} />
-              <Text style={root.drawerTitle}>Officer Profile</Text>
+            <TouchableOpacity style={s.drawerDim} onPress={() => setMenuOpen(false)} activeOpacity={1} />
+            <View style={s.drawer}>
+              <View style={s.drawerHandle} />
+              <Text style={s.drawerTitle}>Officer Profile</Text>
               <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
               <InfoRow label="ROLE"        value={OFFICER_ROLE} />
               <InfoRow label="DEPARTMENT"  value="Field Operations" />
               <InfoRow label="SHIFT"       value="07:00 — 19:00" />
               <InfoRow label="STATUS"      value="ON DUTY" valueColor={T.success} />
-              <TouchableOpacity
-                style={root.drawerCloseBtn}
-                onPress={() => setMenuVisible(false)}
-                activeOpacity={0.85}
-              >
-                <Text style={root.drawerCloseBtnText}>CLOSE</Text>
+              <TouchableOpacity style={s.drawerCloseBtn} onPress={() => setMenuOpen(false)} activeOpacity={0.85}>
+                <Text style={s.drawerCloseBtnText}>CLOSE</Text>
               </TouchableOpacity>
             </View>
           </>
         )}
-      </View>
+
+        {/* ── SUPPORT REQUEST overlay (Active Task only) ──────────────────── */}
+        {appState === 3 && supportOpen && (
+          <View style={s.overlayBg}>
+            <View style={s.overlayCard}>
+              <Text style={s.supportModalTitle}>Request Cross-Dept Support</Text>
+              <Text style={s.supportModalSub}>Describe why support is needed:</Text>
+              <TextInput
+                style={s.supportInput}
+                multiline
+                numberOfLines={4}
+                placeholder="e.g. Need electrical crew to isolate live cable before road repair..."
+                placeholderTextColor={T.textSecondary}
+                value={supportText}
+                onChangeText={setSupportText}
+              />
+              {/* Department selector placeholder */}
+              <View style={s.deptSelector}>
+                <Text style={s.deptSelectorText}>SELECT DEPARTMENT  ▾</Text>
+              </View>
+              <TouchableOpacity style={s.submitBtn} onPress={submitSupport} activeOpacity={0.85}>
+                <Text style={s.submitBtnText}>SUBMIT REQUEST</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSupportOpen(false)} style={{ marginTop: 12, alignItems: 'center' }}>
+                <Text style={{ color: T.textSecondary, fontSize: 13 }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </SafeAreaView>
     </PhoneFrame>
   );
 }
 
+// ─── SHARED HIT SLOP ──────────────────────────────────────────────────────────
+const HIT = { top: 12, bottom: 12, left: 12, right: 12 };
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SCREEN: SPLASH
-// ═════════════════════════════════════════════════════════════════════════════
-function SplashScreen() {
-  return (
-    <View style={spl.root}>
-      <View style={spl.logoWrap}>
-        <View style={spl.logoRow}>
-          <Text style={spl.logo}>CIVIX</Text>
-          <View style={spl.dot} />
-        </View>
-        <Text style={spl.sub}>FIELD OPERATIONS</Text>
-      </View>
-      <ActivityIndicator size="large" color={T.accent} />
-      <Text style={spl.hint}>Initializing secure connection…</Text>
-    </View>
-  );
-}
-const spl = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  logoWrap:{ alignItems: 'center', marginBottom: 48 },
-  logoRow: { flexDirection: 'row', alignItems: 'center' },
-  logo:    { fontSize: 44, fontWeight: '900', color: T.text, letterSpacing: 8 },
-  dot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: T.accent, marginLeft: 6, marginTop: 10 },
-  sub:     { fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 4, marginTop: 8 },
-  hint:    { fontSize: 12, color: '#D1D5DB', marginTop: 20, letterSpacing: 0.3 },
-});
+// ─── REUSABLE SUB-COMPONENTS ──────────────────────────────────────────────────
 
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SHARED: AppHeader
-// ═════════════════════════════════════════════════════════════════════════════
-function AppHeader({ title, onBack, right }) {
-  return (
-    <View style={hdr.bar}>
-      {onBack ? (
-        <TouchableOpacity onPress={onBack} style={hdr.backBtn}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Text style={hdr.arrow}>←</Text>
-          <Text style={hdr.backLabel}>Back</Text>
-        </TouchableOpacity>
-      ) : <View style={hdr.side} />}
-      <Text style={hdr.title}>{title}</Text>
-      <View style={hdr.side}>{right || null}</View>
-    </View>
-  );
-}
-const hdr = StyleSheet.create({
-  bar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F3F4' },
-  backBtn:  { flexDirection: 'row', alignItems: 'center' },
-  arrow:    { fontSize: 22, color: T.accent, fontWeight: '700', marginRight: 4 },
-  backLabel:{ fontSize: 14, color: T.accent, fontWeight: '600' },
-  title:    { fontSize: 13, fontWeight: '800', color: T.text, letterSpacing: 2 },
-  side:     { width: 70 },
-});
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SHARED: InfoRow (used in modals)
-// ═════════════════════════════════════════════════════════════════════════════
 function InfoRow({ label, value, valueColor }) {
   return (
-    <View style={ir.row}>
-      <Text style={ir.label}>{label}</Text>
-      <Text style={[ir.value, valueColor ? { color: valueColor } : null]}>{value}</Text>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' }}>
+      <Text style={{ fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: valueColor || T.text }}>{value}</Text>
     </View>
   );
 }
-const ir = StyleSheet.create({
-  row:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  label: { fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 },
-  value: { fontSize: 13, fontWeight: '700', color: T.text },
-});
 
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SCREEN: DASHBOARD
-// ═════════════════════════════════════════════════════════════════════════════
-function DashboardScreen({
-  dispatches, onAccept, onRecentIssues, onGoOffDuty, onMenuOpen,
-}) {
+function LoginScreen({ onLogin }) {
+  const [officerId, setOfficerId] = useState('');
+  const [pin, setPin]             = useState('');
   return (
-    <SafeAreaView style={dsh.root}>
-
-      {/* ── TOP NAVIGATION BAR ────────────────────────────────────────── */}
-      <View style={dsh.header}>
-        <TouchableOpacity onPress={onMenuOpen} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <View style={dsh.ham}>
-            <View style={dsh.hamLine} />
-            <View style={[dsh.hamLine, { width: 16 }]} />
-            <View style={dsh.hamLine} />
-          </View>
-        </TouchableOpacity>
-        <Text style={dsh.headerTitle}>CIVIX</Text>
-        <View style={dsh.liveRow}>
-          <View style={dsh.liveDot} />
-          <Text style={dsh.liveText}>LIVE</Text>
+    <View style={s.loginRoot}>
+      <View style={s.loginCard}>
+        <View style={[s.logoRow, { marginBottom: 2 }]}>
+          <Text style={s.logoText}>CIVIX</Text>
+          <View style={s.logoDot} />
         </View>
-      </View>
-
-      {/* ── SECTION LABEL + ROLE BADGE ────────────────────────────────── */}
-      <View style={dsh.sectionRow}>
-        <Text style={dsh.sectionTitle}>AWAITING DISPATCHES</Text>
-        <View style={dsh.roleBadge}>
-          <Text style={dsh.roleBadgeText}>🚧  ROAD WORKER</Text>
-        </View>
-      </View>
-
-      {/* ── DISPATCH LIST ─────────────────────────────────────────────── */}
-      <ScrollView
-        style={{ flex: 1 }}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={dsh.listContent}
-      >
-        {dispatches.map(d => <DispatchCard key={d.id} d={d} onAccept={onAccept} />)}
-        <View style={{ height: 16 }} />
-      </ScrollView>
-
-      {/* ── BOTTOM BAR ────────────────────────────────────────────────── */}
-      <View style={dsh.bottomBar}>
-        <TouchableOpacity style={dsh.recentBtn} onPress={onRecentIssues} activeOpacity={0.85}>
-          <Text style={dsh.recentBtnText}>📋  RECENT ISSUES</Text>
+        <Text style={s.loginSubBrand}>COMMAND CENTER</Text>
+        <Text style={s.loginHeading}>Official Administrator Login</Text>
+        <Text style={s.loginFieldLabel}>OFFICER ID</Text>
+        <TextInput
+          style={s.loginInput}
+          placeholder="e.g. OP-441"
+          placeholderTextColor="#9CA3AF"
+          value={officerId}
+          onChangeText={setOfficerId}
+          autoCapitalize="characters"
+        />
+        <Text style={s.loginFieldLabel}>SECURE PIN</Text>
+        <TextInput
+          style={s.loginInput}
+          placeholder="Enter your PIN"
+          placeholderTextColor="#9CA3AF"
+          value={pin}
+          onChangeText={setPin}
+          secureTextEntry
+          keyboardType="numeric"
+        />
+        <TouchableOpacity style={s.loginBtn} onPress={onLogin} activeOpacity={0.88}>
+          <Text style={s.loginBtnText}>SECURE LOGIN</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={dsh.offDutyBtn} onPress={onGoOffDuty} activeOpacity={0.85}>
-          <Text style={dsh.offDutyBtnText}>GO OFF DUTY</Text>
-        </TouchableOpacity>
+        <Text style={s.loginFootnote}>Restricted Government Access Only. Activity is logged.</Text>
       </View>
-
-    </SafeAreaView>
+    </View>
   );
 }
 
-// ── Dispatch Card ────────────────────────────────────────────────────────────
 function DispatchCard({ d, onAccept }) {
   const ps = PRI[d.priority] || PRI.MODERATE;
   return (
-    <View style={dc.card}>
-      <View style={dc.top}>
-        <View style={[dc.pBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
-          <Text style={[dc.pText, { color: ps.text }]}>{d.priority}</Text>
+    <View style={s.dispatchCard}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <View style={[s.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+          <Text style={[s.priText, { color: ps.text }]}>{d.priority}</Text>
         </View>
-        <Text style={dc.time}>{d.time}</Text>
+        <Text style={{ fontSize: 12, color: T.textSecondary }}>{d.time}</Text>
       </View>
-      <Text style={dc.title}>{d.title}</Text>
-      <Text style={dc.desc} numberOfLines={2}>{d.description}</Text>
-      <View style={dc.bottom}>
-        <Text style={dc.dist}>📍  {d.distance}</Text>
-        <TouchableOpacity style={dc.acceptBtn} onPress={() => onAccept(d)} activeOpacity={0.85}>
-          <Text style={dc.acceptText}>ACCEPT</Text>
+      <Text style={s.dispatchTitle}>{d.title}</Text>
+      <Text style={s.dispatchDesc} numberOfLines={2}>{d.description}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: T.textSecondary }}>📍  {d.distance}</Text>
+        <TouchableOpacity style={s.acceptBtn} onPress={onAccept} activeOpacity={0.85}>
+          <Text style={s.acceptBtnText}>ACCEPT</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-const dsh = StyleSheet.create({
-  root:         { flex: 1, backgroundColor: T.bg },
-  // Header
-  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F3F4' },
-  ham:          { gap: 4, paddingVertical: 2 },
-  hamLine:      { width: 22, height: 2, borderRadius: 1, backgroundColor: T.text },
-  headerTitle:  { fontSize: 17, fontWeight: '900', color: T.text, letterSpacing: 5 },
-  liveRow:      { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  liveDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: T.success },
-  liveText:     { fontSize: 11, fontWeight: '700', color: T.success, letterSpacing: 1 },
-  // Section
-  sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 2.5 },
-  roleBadge:    { backgroundColor: '#FFF7ED', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#FED7AA' },
-  roleBadgeText:{ fontSize: 11, fontWeight: '700', color: '#92400E', letterSpacing: 0.5 },
-  // List
-  listContent:  { paddingHorizontal: 16, paddingTop: 4 },
-  // Bottom bar
-  bottomBar:    { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F1F3F4', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20, gap: 10 },
-  recentBtn:    { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: T.border },
-  recentBtnText:{ fontSize: 13, fontWeight: '700', color: T.text, letterSpacing: 1 },
-  offDutyBtn:   { backgroundColor: '#1F2937', borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center' },
-  offDutyBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: 2 },
-});
-
-const dc = StyleSheet.create({
-  card:      { backgroundColor: T.card, borderRadius: T.radius, padding: 16, marginBottom: 12, ...T.shadow },
-  top:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  pBadge:    { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1 },
-  pText:     { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  time:      { fontSize: 12, color: T.textSecondary, fontWeight: '500' },
-  title:     { fontSize: 15, fontWeight: '800', color: T.text, marginBottom: 6 },
-  desc:      { fontSize: 13, color: T.textSecondary, lineHeight: 19, marginBottom: 14 },
-  bottom:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dist:      { fontSize: 13, fontWeight: '600', color: T.textSecondary },
-  acceptBtn: { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingHorizontal: 18, paddingVertical: 10 },
-  acceptText:{ fontSize: 13, fontWeight: '800', color: T.white, letterSpacing: 1 },
-});
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SCREEN: RECENT ISSUES
-// ═════════════════════════════════════════════════════════════════════════════
-function RecentIssuesScreen({ tasks, onSelect, onBack }) {
-  return (
-    <SafeAreaView style={ris.root}>
-      <AppHeader title="ACTIVE ISSUES" onBack={onBack} />
-      {tasks.length === 0 ? (
-        <View style={ris.empty}>
-          <Text style={ris.emptyIcon}>📋</Text>
-          <Text style={ris.emptyTitle}>No Active Issues</Text>
-          <Text style={ris.emptyHint}>Accept a dispatch from the dashboard to begin.</Text>
-        </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ris.list}>
-          {tasks.map(task => {
-            const ps = PRI[task.priority] || PRI.MODERATE;
-            const isEnRoute = task.status === 'EN_ROUTE';
-            return (
-              <TouchableOpacity
-                key={task.id}
-                style={ris.card}
-                onPress={() => onSelect(task)}
-                activeOpacity={0.85}
-              >
-                <View style={ris.cardTop}>
-                  <View style={[ris.statusBadge, { backgroundColor: isEnRoute ? '#EFF6FF' : '#F9FAFB' }]}>
-                    <Text style={[ris.statusText, { color: isEnRoute ? T.accent : T.textSecondary }]}>
-                      {isEnRoute ? '🚗  EN ROUTE' : '⏳  PENDING'}
-                    </Text>
-                  </View>
-                  <Text style={ris.acceptedAt}>Accepted {task.acceptedAt}</Text>
-                </View>
-                <Text style={ris.title}>{task.title}</Text>
-                <Text style={ris.desc} numberOfLines={1}>{task.description}</Text>
-                <View style={ris.cardBottom}>
-                  <Text style={ris.dist}>📍  {task.distance}</Text>
-                  <View style={[ris.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
-                    <Text style={[ris.priText, { color: ps.text }]}>{task.priority}</Text>
-                  </View>
-                  <Text style={ris.tapHint}>Tap to open  →</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-          <View style={{ height: 32 }} />
-        </ScrollView>
-      )}
-    </SafeAreaView>
-  );
-}
-const ris = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: T.bg },
-  empty:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  emptyIcon:   { fontSize: 48, marginBottom: 16 },
-  emptyTitle:  { fontSize: T.fontLG, fontWeight: '800', color: T.text, marginBottom: 8 },
-  emptyHint:   { fontSize: T.fontSM, color: T.textSecondary, textAlign: 'center' },
-  list:        { paddingHorizontal: 16, paddingTop: 12 },
-  card:        { backgroundColor: T.card, borderRadius: T.radius, padding: 16, marginBottom: 12, ...T.shadow },
-  cardTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  statusBadge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  statusText:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  acceptedAt:  { fontSize: 11, color: T.textSecondary },
-  title:       { fontSize: 15, fontWeight: '800', color: T.text, marginBottom: 4 },
-  desc:        { fontSize: 12, color: T.textSecondary, marginBottom: 12 },
-  cardBottom:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dist:        { fontSize: 12, fontWeight: '600', color: T.textSecondary, flex: 1 },
-  priBadge:    { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
-  priText:     { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  tapHint:     { fontSize: 12, color: T.accent, fontWeight: '600' },
-});
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SCREEN: ACTIVE TASK
-// ═════════════════════════════════════════════════════════════════════════════
-function ActiveTaskScreen({ task, onCompleted, onBack }) {
-  if (!task) return null;
+function TaskDetailCard({ task }) {
   const ps = PRI[task.priority] || PRI.MODERATE;
   return (
-    <SafeAreaView style={ats.root}>
-      <AppHeader title="ACTIVE TASK" onBack={onBack} />
-
-      {/* Priority + title strip */}
-      <View style={[ats.titleStrip, { backgroundColor: ps.bg, borderColor: ps.border }]}>
-        <View style={[ats.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
-          <Text style={[ats.priText, { color: ps.text }]}>{task.priority}</Text>
+    <View style={s.taskCard}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        <View style={[s.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+          <Text style={[s.priText, { color: ps.text }]}>{task.priority}</Text>
         </View>
-        <Text style={[ats.taskTitle, { color: ps.text }]} numberOfLines={1}>{task.title}</Text>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: ps.text, flex: 1 }} numberOfLines={1}>{task.title}</Text>
       </View>
-
-      {/* Navigation card — vertically centered in remaining space */}
-      <View style={ats.centerArea}>
-        <View style={ats.navCard}>
-          <Text style={ats.navHeader}>🧭  NAVIGATION</Text>
-          <Text style={ats.navDirection}>{task.direction}</Text>
-          <View style={ats.navDivider} />
-          <View style={ats.navMeta}>
-            <View style={ats.metaItem}>
-              <Text style={ats.metaLabel}>DISTANCE</Text>
-              <Text style={ats.metaValue}>{task.distance}</Text>
-            </View>
-            <View style={ats.metaSep} />
-            <View style={ats.metaItem}>
-              <Text style={ats.metaLabel}>ETA</Text>
-              <Text style={ats.metaValue}>~8 min</Text>
-            </View>
-            <View style={ats.metaSep} />
-            <View style={ats.metaItem}>
-              <Text style={ats.metaLabel}>STATUS</Text>
-              <Text style={[ats.metaValue, { color: T.accent }]}>EN ROUTE</Text>
-            </View>
-          </View>
+      <Text style={{ fontSize: 14, color: T.textSecondary, lineHeight: 20, marginBottom: 16 }}>{task.description}</Text>
+      <View style={{ height: 1, backgroundColor: T.border, marginBottom: 14 }} />
+      <Text style={{ fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 2.5, marginBottom: 8 }}>🧭  NAVIGATION</Text>
+      <Text style={{ fontSize: 17, fontWeight: '700', color: T.text, lineHeight: 24, marginBottom: 16 }}>{task.direction}</Text>
+      <View style={{ flexDirection: 'row' }}>
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 }}>DISTANCE</Text>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: T.text, marginTop: 4 }}>{task.distance}</Text>
+        </View>
+        <View style={{ width: 1, backgroundColor: T.border }} />
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 }}>ETA</Text>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: T.text, marginTop: 4 }}>~8 min</Text>
+        </View>
+        <View style={{ width: 1, backgroundColor: T.border }} />
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={{ fontSize: 10, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 }}>STATUS</Text>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: T.accent, marginTop: 4 }}>EN ROUTE</Text>
         </View>
       </View>
-
-      {/* TASK COMPLETED — always enabled */}
-      <View style={ats.bottomBar}>
-        <TouchableOpacity style={ats.completedBtn} onPress={onCompleted} activeOpacity={0.85}>
-          <Text style={ats.completedBtnText}>✓  TASK COMPLETED</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+    </View>
   );
 }
-const ats = StyleSheet.create({
-  root:            { flex: 1, backgroundColor: T.bg },
-  titleStrip:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, gap: 10 },
-  priBadge:        { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1 },
-  priText:         { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  taskTitle:       { fontSize: 14, fontWeight: '700', flex: 1 },
-  // Center nav card
-  centerArea:      { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
-  navCard:         { backgroundColor: T.card, borderRadius: T.radius, padding: 24, width: '100%', ...T.shadowLG },
-  navHeader:       { fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 3, marginBottom: 14 },
-  navDirection:    { fontSize: 18, fontWeight: '700', color: T.text, lineHeight: 26, marginBottom: 20 },
-  navDivider:      { height: 1, backgroundColor: T.border, marginBottom: 16 },
-  navMeta:         { flexDirection: 'row', alignItems: 'center' },
-  metaItem:        { flex: 1, alignItems: 'center' },
-  metaLabel:       { fontSize: 10, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5, marginBottom: 4 },
-  metaValue:       { fontSize: 15, fontWeight: '800', color: T.text },
-  metaSep:         { width: 1, height: 32, backgroundColor: T.border },
-  // Bottom
-  bottomBar:       { paddingHorizontal: 16, paddingBottom: 28, paddingTop: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F1F3F4' },
-  completedBtn:    { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', ...T.shadow },
+
+// ─── STYLES ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  // Root container — creates bounding box for absolute overlays
+  root: { flex: 1, position: 'relative', overflow: 'hidden', backgroundColor: T.bg },
+
+  // ── Splash ──────────────────────────────────────────────────────────────
+  splashRoot:   { flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  splashHint:   { fontSize: 12, color: '#D1D5DB', marginTop: 18, letterSpacing: 0.3 },
+
+  // ── Logo (reused in Splash, overlays, Login) ─────────────────────────────
+  logoRow:  { flexDirection: 'row', alignItems: 'center' },
+  logoText: { fontSize: 36, fontWeight: '900', color: T.text, letterSpacing: 7 },
+  logoDot:  { width: 9, height: 9, borderRadius: 5, backgroundColor: T.accent, marginLeft: 5, marginTop: 8 },
+  logoSub:  { fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 3.5, marginTop: 4 },
+
+  // ── Login ────────────────────────────────────────────────────────────────
+  loginRoot:       { flex: 1, backgroundColor: '#F9FAFB', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  loginCard:       { width: '100%', backgroundColor: T.card, borderRadius: T.radius, padding: 28, ...T.shadowLG },
+  loginSubBrand:   { fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 4, marginBottom: 18 },
+  loginHeading:    { fontSize: 18, fontWeight: '800', color: T.text, marginBottom: 22 },
+  loginFieldLabel: { fontSize: 11, fontWeight: '700', color: T.text, letterSpacing: 1.5, marginBottom: 6 },
+  loginInput:      { borderWidth: 1, borderColor: T.border, borderRadius: T.radiusSM, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, backgroundColor: '#F9FAFB', marginBottom: 16 },
+  loginBtn:        { backgroundColor: '#1E3A5F', borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center', marginTop: 8, ...T.shadow },
+  loginBtnText:    { color: '#FFFFFF', fontWeight: '800', fontSize: 15, letterSpacing: 2.5 },
+  loginFootnote:   { fontSize: 11, color: '#9CA3AF', textAlign: 'center', marginTop: 20 },
+
+  // ── App Header (shared) ──────────────────────────────────────────────────
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F3F4' },
+  backBtn:     { flexDirection: 'row', alignItems: 'center' },
+  backArrow:   { fontSize: 22, color: T.accent, fontWeight: '700', marginRight: 4 },
+  backLabel:   { fontSize: 14, color: T.accent, fontWeight: '600' },
+  headerTitle: { fontSize: 13, fontWeight: '800', color: T.text, letterSpacing: 2 },
+  ham:         { gap: 4, paddingVertical: 2 },
+  hamLine:     { width: 22, height: 2, borderRadius: 1, backgroundColor: T.text },
+  liveRow:     { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: T.success },
+  liveText:    { fontSize: 11, fontWeight: '700', color: T.success, letterSpacing: 1 },
+
+  // ── Dashboard ────────────────────────────────────────────────────────────
+  sectionRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  sectionLabel:   { fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 2.5 },
+  roleBadge:      { backgroundColor: '#FFF7ED', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#FED7AA' },
+  roleBadgeText:  { fontSize: 11, fontWeight: '700', color: '#92400E' },
+  bottomBar:      { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F1F3F4', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20, gap: 10 },
+  recentBtn:      { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: T.border },
+  recentBtnText:  { fontSize: 13, fontWeight: '700', color: T.text, letterSpacing: 1 },
+  offDutyBtn:     { backgroundColor: '#1F2937', borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center' },
+  offDutyBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: 2 },
+
+  // ── Dispatch card ────────────────────────────────────────────────────────
+  dispatchCard:  { backgroundColor: T.card, borderRadius: T.radius, padding: 16, marginBottom: 12, ...T.shadow },
+  priBadge:      { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1 },
+  priText:       { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  dispatchTitle: { fontSize: 15, fontWeight: '800', color: T.text, marginBottom: 6 },
+  dispatchDesc:  { fontSize: 13, color: T.textSecondary, lineHeight: 19 },
+  acceptBtn:     { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingHorizontal: 18, paddingVertical: 10 },
+  acceptBtnText: { fontSize: 13, fontWeight: '800', color: T.white, letterSpacing: 1 },
+
+  // ── Active task card ─────────────────────────────────────────────────────
+  taskCard:      { backgroundColor: T.card, borderRadius: T.radius, padding: 20, marginBottom: 16, ...T.shadowLG },
+  emptyCard:     { backgroundColor: T.card, borderRadius: T.radius, padding: 28, alignItems: 'center', marginBottom: 16, ...T.shadow },
+  emptyText:     { fontSize: 16, fontWeight: '700', color: T.text, marginBottom: 8 },
+  emptyHint:     { fontSize: 13, color: T.textSecondary, textAlign: 'center' },
+  toastCard:     { backgroundColor: '#ECFDF5', borderRadius: T.radiusSM, padding: 14, marginBottom: 16, borderLeftWidth: 4, borderLeftColor: T.success },
+  toastText:     { fontSize: 13, color: '#065F46', fontWeight: '600' },
+  dirBtn:        { backgroundColor: T.card, borderRadius: T.radiusSM, paddingVertical: 16, alignItems: 'center', marginBottom: 12, borderWidth: 1.5, borderColor: T.accent, ...T.shadow },
+  dirBtnText:    { fontSize: 14, fontWeight: '700', color: T.accent, letterSpacing: 1 },
+  supportBtn:    { backgroundColor: '#FFFBEB', borderRadius: T.radiusSM, paddingVertical: 16, alignItems: 'center', marginBottom: 12, borderWidth: 1.5, borderColor: '#FCD34D' },
+  supportBtnText:{ fontSize: 14, fontWeight: '700', color: '#92400E', letterSpacing: 1 },
+  completedBtn:  { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', ...T.shadow },
   completedBtnText:{ fontSize: 16, fontWeight: '800', color: T.white, letterSpacing: 2 },
-});
 
+  // ── Verification ─────────────────────────────────────────────────────────
+  verifyIconWrap:  { width: 100, height: 100, borderRadius: 50, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginBottom: 22, borderWidth: 2, borderColor: '#BFDBFE' },
+  verifyTitle:     { fontSize: 20, fontWeight: '800', color: T.text, textAlign: 'center', marginBottom: 12 },
+  verifyDesc:      { fontSize: 14, color: T.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 16 },
+  taskChip:        { backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: T.border },
+  taskChipText:    { fontSize: 12, fontWeight: '600', color: T.text, maxWidth: 240 },
+  thumbWrap:       { position: 'relative', marginBottom: 28 },
+  thumb:           { width: 160, height: 160, borderRadius: T.radius, ...T.shadowLG },
+  thumbCheck:      { position: 'absolute', bottom: -14, right: -14, width: 44, height: 44, borderRadius: 22, backgroundColor: T.success, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFF' },
+  processingTitle: { fontSize: 16, fontWeight: '700', color: T.text, textAlign: 'center', marginBottom: 8 },
+  processingHint:  { fontSize: 13, color: T.textSecondary, textAlign: 'center' },
+  successTitle:    { fontSize: 22, fontWeight: '900', color: T.text, marginBottom: 4 },
+  successSub:      { fontSize: 16, fontWeight: '700', color: T.success, marginBottom: 20 },
+  successCard:     { backgroundColor: '#ECFDF5', borderRadius: T.radiusSM, padding: 16, width: '100%', borderLeftWidth: 4, borderLeftColor: T.success, marginBottom: 24 },
+  successCardText: { fontSize: 13, color: '#065F46', lineHeight: 20 },
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SCREEN: VERIFICATION
-// ═════════════════════════════════════════════════════════════════════════════
-function VerificationScreen({ phase, capturedImage, taskTitle, onOpenCamera, onReturn, onBack }) {
-  return (
-    <SafeAreaView style={vs.root}>
+  // ── Camera ───────────────────────────────────────────────────────────────
+  camOverlay:      { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 50 },
+  camShutter:      { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFF' },
+  camShutterInner: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFFFFF' },
+  camFallback:     { flex: 1, backgroundColor: '#111827', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  camFallbackFrame:{ width: 240, height: 300, borderColor: 'rgba(255,255,255,0.3)', borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 32, position: 'relative' },
+  camCornerTL:     { position: 'absolute', top: -2, left: -2, width: 24, height: 24, borderTopWidth: 3, borderLeftWidth: 3, borderColor: '#FFFFFF' },
+  camCornerTR:     { position: 'absolute', top: -2, right: -2, width: 24, height: 24, borderTopWidth: 3, borderRightWidth: 3, borderColor: '#FFFFFF' },
+  camCornerBL:     { position: 'absolute', bottom: -2, left: -2, width: 24, height: 24, borderBottomWidth: 3, borderLeftWidth: 3, borderColor: '#FFFFFF' },
+  camCornerBR:     { position: 'absolute', bottom: -2, right: -2, width: 24, height: 24, borderBottomWidth: 3, borderRightWidth: 3, borderColor: '#FFFFFF' },
+  camFallbackIcon: { fontSize: 48, marginBottom: 12 },
+  camFallbackText: { fontSize: 14, color: 'rgba(255,255,255,0.6)', textAlign: 'center' },
+  simBtn:          { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingHorizontal: 24, paddingVertical: 16, alignItems: 'center' },
+  simBtnText:      { fontSize: 13, fontWeight: '800', color: '#FFF', letterSpacing: 1.5 },
 
-      {/* Header — only show back arrow when idle */}
-      {phase === 'idle' && <AppHeader title="VERIFICATION" onBack={onBack} />}
+  // ── Absolute overlays (duty modal, drawer, support) ───────────────────────
+  overlayBg:         { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 200 },
+  overlayCard:       { width: '100%', backgroundColor: T.card, borderRadius: T.radius, padding: 28, ...T.shadowLG },
+  dutyBtn:           { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', marginTop: 24, ...T.shadow },
+  dutyBtnText:       { color: T.white, fontWeight: '800', fontSize: 16, letterSpacing: 2.5 },
+  drawerDim:         { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100 },
+  drawer:            { position: 'absolute', top: 0, bottom: 0, left: 0, width: '75%', backgroundColor: T.card, zIndex: 101, padding: 24, paddingTop: 52, shadowColor: '#000', shadowOffset: { width: 6, height: 0 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 20 },
+  drawerHandle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 24 },
+  drawerTitle:       { fontSize: 20, fontWeight: '800', color: T.text, marginBottom: 16 },
+  drawerCloseBtn:    { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
+  drawerCloseBtnText:{ fontWeight: '700', fontSize: 14, color: T.text },
 
-      {/* ── IDLE: photo button ──────────────────────────────────────────── */}
-      {phase === 'idle' && (
-        <View style={vs.idleContent}>
-          <View style={vs.idleHero}>
-            <View style={vs.idleIconWrap}>
-              <Text style={vs.idleIcon}>📸</Text>
-            </View>
-            <Text style={vs.idleTitle}>Photo Verification Required</Text>
-            <Text style={vs.idleDesc}>
-              Take a live photo to confirm the issue has been resolved.{'\n'}
-              This triggers automatic fund release via the AI Swarm.
-            </Text>
-            {taskTitle && (
-              <View style={vs.taskChip}>
-                <Text style={vs.taskChipText} numberOfLines={1}>📌  {taskTitle}</Text>
-              </View>
-            )}
-          </View>
-          <TouchableOpacity style={vs.photoBtn} onPress={onOpenCamera} activeOpacity={0.85}>
-            <Text style={vs.photoBtnText}>PHOTO VERIFICATION</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── PROCESSING + SUCCESS ────────────────────────────────────────── */}
-      {(phase === 'processing' || phase === 'success') && (
-        <View style={vs.processContent}>
-
-          {/* Thumbnail */}
-          <View style={vs.thumbnailWrap}>
-            {capturedImage ? (
-              <Image source={{ uri: capturedImage }} style={vs.thumbnail} resizeMode="cover" />
-            ) : (
-              <View style={[vs.thumbnail, vs.thumbPlaceholder]}>
-                <Text style={vs.thumbPlaceholderIcon}>📷</Text>
-              </View>
-            )}
-            {phase === 'success' && (
-              <View style={vs.checkOverlay}>
-                <Text style={vs.checkIcon}>✓</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Processing state */}
-          {phase === 'processing' && (
-            <View style={vs.processingBox}>
-              <ActivityIndicator size="large" color={T.accent} style={{ marginBottom: 16 }} />
-              <Text style={vs.processingTitle}>AI Swarm Verifying Resolution…</Text>
-              <Text style={vs.processingHint}>Analyzing photo, GPS coordinates, and incident data</Text>
-            </View>
-          )}
-
-          {/* Success state */}
-          {phase === 'success' && (
-            <View style={vs.successBox}>
-              <Text style={vs.successIcon}>✅</Text>
-              <Text style={vs.successTitle}>Verification Successful</Text>
-              <Text style={vs.successSub}>Funds Released</Text>
-              <View style={vs.successCard}>
-                <Text style={vs.successCardText}>
-                  The AI Swarm confirmed the resolution. Incident closed and payment processed automatically.
-                </Text>
-              </View>
-              <TouchableOpacity style={vs.returnBtn} onPress={onReturn} activeOpacity={0.85}>
-                <Text style={vs.returnBtnText}>RETURN TO DASHBOARD</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-        </View>
-      )}
-
-    </SafeAreaView>
-  );
-}
-const vs = StyleSheet.create({
-  root:                { flex: 1, backgroundColor: T.bg },
-  // Idle
-  idleContent:         { flex: 1, justifyContent: 'space-between', padding: 20, paddingBottom: 28 },
-  idleHero:            { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  idleIconWrap:        { width: 100, height: 100, borderRadius: 50, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 2, borderColor: '#BFDBFE' },
-  idleIcon:            { fontSize: 44 },
-  idleTitle:           { fontSize: 20, fontWeight: '800', color: T.text, textAlign: 'center', marginBottom: 12 },
-  idleDesc:            { fontSize: 14, color: T.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  taskChip:            { backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: T.border },
-  taskChipText:        { fontSize: 12, fontWeight: '600', color: T.text, maxWidth: 240 },
-  photoBtn:            { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 22, alignItems: 'center', ...T.shadowLG },
-  photoBtnText:        { fontSize: 16, fontWeight: '800', color: T.white, letterSpacing: 2.5 },
-  // Processing + success shared
-  processContent:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  thumbnailWrap:       { position: 'relative', marginBottom: 28 },
-  thumbnail:           { width: 160, height: 160, borderRadius: T.radius, ...T.shadowLG },
-  thumbPlaceholder:    { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' },
-  thumbPlaceholderIcon:{ fontSize: 52 },
-  checkOverlay:        { position: 'absolute', bottom: -14, right: -14, width: 44, height: 44, borderRadius: 22, backgroundColor: T.success, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF' },
-  checkIcon:           { fontSize: 20, color: '#FFFFFF', fontWeight: '900' },
-  // Processing
-  processingBox:       { alignItems: 'center' },
-  processingTitle:     { fontSize: 16, fontWeight: '700', color: T.text, textAlign: 'center', marginBottom: 8 },
-  processingHint:      { fontSize: 13, color: T.textSecondary, textAlign: 'center' },
-  // Success
-  successBox:          { alignItems: 'center', width: '100%' },
-  successIcon:         { fontSize: 40, marginBottom: 12 },
-  successTitle:        { fontSize: 22, fontWeight: '900', color: T.text, marginBottom: 4 },
-  successSub:          { fontSize: 16, fontWeight: '700', color: T.success, marginBottom: 20 },
-  successCard:         { backgroundColor: '#ECFDF5', borderRadius: T.radiusSM, padding: 16, width: '100%', borderLeftWidth: 4, borderLeftColor: T.success, marginBottom: 28 },
-  successCardText:     { fontSize: 13, color: '#065F46', lineHeight: 20 },
-  returnBtn:           { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center', width: '100%', ...T.shadow },
-  returnBtnText:       { fontSize: 15, fontWeight: '800', color: T.white, letterSpacing: 2 },
-});
-
-// ─── ROOT CONTAINER + OVERLAY STYLES ─────────────────────────────────────────
-// These styles lock the duty modal and hamburger drawer inside the phone frame.
-// position:'relative' + overflow:'hidden' on the container creates a strict
-// bounding box; all absolute children are clipped to it.
-const root = StyleSheet.create({
-  container:          { flex: 1, position: 'relative', overflow: 'hidden' },
-
-  // ── Duty modal overlay ──────────────────────────────────────────────────
-  modalOverlay:       { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 200 },
-  modalCard:          { width: '100%', backgroundColor: T.card, borderRadius: T.radius, padding: 28, ...T.shadowLG },
-  mLogoRow:           { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  mLogo:              { fontSize: 28, fontWeight: '900', color: T.text, letterSpacing: 5 },
-  mLogoDot:           { width: 8, height: 8, borderRadius: 4, backgroundColor: T.accent, marginLeft: 4, marginTop: 4 },
-  mSub:               { fontSize: T.fontXS, fontWeight: '600', color: T.textSecondary, letterSpacing: 2.5, marginBottom: 20 },
-  mDivider:           { height: 1, backgroundColor: T.border, marginBottom: 8 },
-  dutyBtn:            { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', marginTop: 24, ...T.shadow },
-  dutyBtnText:        { color: T.white, fontWeight: '800', fontSize: 16, letterSpacing: 2.5 },
-
-  // ── Hamburger drawer ────────────────────────────────────────────────────
-  // Semi-transparent overlay behind the drawer — tap to dismiss
-  drawerOverlay:      { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100 },
-  // Drawer panel slides in from the left; right-side shadow separates it
-  drawerPanel:        { position: 'absolute', top: 0, bottom: 0, left: 0, width: '75%', backgroundColor: T.card, zIndex: 101, padding: 24, paddingTop: 52, shadowColor: '#000', shadowOffset: { width: 6, height: 0 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 20 },
-  drawerHandle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 24 },
-  drawerTitle:        { fontSize: T.fontLG, fontWeight: '800', color: T.text, marginBottom: 16 },
-  drawerCloseBtn:     { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
-  drawerCloseBtnText: { fontWeight: '700', fontSize: T.fontSM, color: T.text },
+  // ── Support request overlay ───────────────────────────────────────────────
+  supportModalTitle: { fontSize: 18, fontWeight: '800', color: T.text, marginBottom: 6 },
+  supportModalSub:   { fontSize: 13, color: T.textSecondary, marginBottom: 12 },
+  supportInput:      { borderWidth: 1, borderColor: T.border, borderRadius: T.radiusSM, padding: 12, fontSize: 13, color: T.text, minHeight: 90, textAlignVertical: 'top', backgroundColor: '#F9FAFB', marginBottom: 14 },
+  deptSelector:      { borderWidth: 1, borderColor: T.border, borderRadius: T.radiusSM, paddingHorizontal: 14, paddingVertical: 13, backgroundColor: '#F9FAFB', marginBottom: 16 },
+  deptSelectorText:  { fontSize: 13, color: T.textSecondary, fontWeight: '600' },
+  submitBtn:         { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 16, alignItems: 'center' },
+  submitBtnText:     { fontSize: 14, fontWeight: '800', color: T.white, letterSpacing: 1.5 },
 });
