@@ -35,7 +35,7 @@ logger = logging.getLogger("civix-pulse.swarm")
 
 # Default free model on OpenRouter (configurable via env)
 OPENROUTER_MODEL = os.environ.get(
-    "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"
+    "OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"
 )
 
 # ---------------------------------------------------------------------------
