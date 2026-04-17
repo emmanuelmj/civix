@@ -106,14 +106,14 @@ export default function DashboardPage() {
       </div>
 
       {/* Left: Ingestion Feed — desktop only */}
-      <div className="hidden lg:flex w-72 shrink-0 border-r flex-col"
+      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-r flex-col overflow-hidden"
         style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <IngestionFeed items={intake} />
       </div>
 
       {/* Center: Map + Stats — desktop */}
       <div className="hidden lg:flex flex-1 flex-col min-w-0 min-h-0">
-        <div className="flex items-center gap-6 px-4 py-2 border-b shrink-0"
+        <div className="flex items-center gap-6 px-5 py-3 border-b shrink-0"
           style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
           <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
           <StatPill label="Critical" value={stats.critical} color="var(--accent-crimson)" />
@@ -122,7 +122,7 @@ export default function DashboardPage() {
           <button
             onClick={handleTrigger}
             disabled={triggering}
-            className="ml-2 px-3 py-1.5 rounded-md text-[11px] font-mono font-semibold transition-all disabled:opacity-50"
+            className="ml-2 px-4 py-2 rounded-md text-xs font-mono font-semibold transition-all disabled:opacity-50"
             style={{
               background: triggering ? "var(--bg-elevated)" : "var(--accent-blue)",
               color: triggering ? "var(--fg-muted)" : "#fff",
@@ -131,13 +131,13 @@ export default function DashboardPage() {
             {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
           </button>
           {triggerMsg && (
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded animate-pulse"
+            <span className="text-xs font-mono px-2.5 py-1 rounded animate-pulse"
               style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>
               {triggerMsg}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+            <span className="text-xs font-mono px-2 py-1 rounded"
               style={{
                 background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "rgba(220,38,38,0.1)" : "var(--accent-amber-dim)",
                 color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "#dc2626" : "var(--accent-amber)",
@@ -156,7 +156,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Right: Swarm Log — desktop only */}
-      <div className="hidden lg:flex w-72 shrink-0 border-l flex-col"
+      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-l flex-col overflow-hidden"
         style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <SwarmLog entries={logs} />
       </div>
@@ -190,10 +190,10 @@ export default function DashboardPage() {
 
 function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
-      <span className="text-[10px] font-mono uppercase" style={{ color: "var(--fg-muted)" }}>{label}</span>
-      <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+      <span className="text-xs font-mono uppercase" style={{ color: "var(--fg-muted)" }}>{label}</span>
+      <span className="text-base font-semibold tabular-nums" style={{ color }}>{value}</span>
     </div>
   );
 }
