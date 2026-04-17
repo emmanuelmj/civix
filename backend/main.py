@@ -490,6 +490,73 @@ async def watcher_rescan() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Field Worker (Officer) Endpoints
+# ---------------------------------------------------------------------------
+
+class LocationUpdate(BaseModel):
+    officer_id: str = Field(..., description="Officer identifier, e.g. OP-441")
+    lat: float = Field(..., description="Current latitude")
+    lng: float = Field(..., description="Current longitude")
+
+
+class VerifyResolutionRequest(BaseModel):
+    officer_id: str = Field(..., description="Officer who resolved the issue")
+    event_id: str = Field(..., description="Event/ticket being verified")
+    photo_base64: str | None = Field(None, description="Base64-encoded verification photo (optional)")
+    notes: str | None = Field(None, description="Resolution notes from the field worker")
+
+
+@app.post("/api/v1/officer/update-location")
+async def officer_update_location(payload: LocationUpdate) -> dict[str, Any]:
+    """Field worker app pings this to share live GPS location."""
+    logger.info(f"Officer {payload.officer_id} location: ({payload.lat}, {payload.lng})")
+    # Broadcast to Command Center dashboard
+    await manager.broadcast({
+        "event_type": "OFFICER_LOCATION",
+        "data": {
+            "officer_id": payload.officer_id,
+            "lat": payload.lat,
+            "lng": payload.lng,
+            "timestamp": time.time(),
+        },
+    })
+    return {"status": "ok", "officer_id": payload.officer_id}
+
+
+@app.post("/api/v1/officer/verify-resolution")
+async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[str, Any]:
+    """
+    Field worker submits verification photo after resolving an issue.
+    The AI swarm validates and closes the ticket.
+    """
+    logger.info(f"Verification from {payload.officer_id} for event {payload.event_id}")
+    has_photo = payload.photo_base64 is not None and len(payload.photo_base64) > 0
+
+    # Simulate AI verification (in production, would analyze the photo)
+    verification_result = {
+        "event_id": payload.event_id,
+        "officer_id": payload.officer_id,
+        "verified": True,
+        "confidence": 0.94 if has_photo else 0.72,
+        "method": "photo_ai_analysis" if has_photo else "officer_attestation",
+        "timestamp": time.time(),
+    }
+
+    # Broadcast resolution to Command Center
+    await manager.broadcast({
+        "event_type": "RESOLUTION_VERIFIED",
+        "data": verification_result,
+    })
+
+    return {
+        "status": "ok",
+        "verified": True,
+        "confidence": verification_result["confidence"],
+        "message": f"Event {payload.event_id} verified and closed.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # WebSocket Endpoint
 # ---------------------------------------------------------------------------
 

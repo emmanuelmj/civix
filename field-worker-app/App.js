@@ -17,6 +17,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
 import PhoneFrame from './components/PhoneFrame';
+import { healthCheck, updateOfficerLocation, verifyResolution } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const OFFICER_ID   = 'OP-441';
@@ -117,28 +118,50 @@ export default function App() {
   const [menuOpen,      setMenuOpen]      = useState(false);
 
   // Active task — support request overlay
-  const [supportOpen,        setSupportOpen]        = useState(false);
-  const [supportText,        setSupportText]        = useState('');
-  const [selectedDept,       setSelectedDept]       = useState(null);
-  const [supportSent,        setSupportSent]        = useState(false);
-  const [assignedSupport,    setAssignedSupport]    = useState(null);
+  const [supportOpen,     setSupportOpen]     = useState(false);
+  const [supportText,     setSupportText]     = useState('');
+  const [selectedDept,    setSelectedDept]    = useState(null);  // chip selection
+  const [supportSent,     setSupportSent]     = useState(false);
+  const [assignedSupport, setAssignedSupport] = useState(null);  // simulated swarm dispatch
 
-  // Verification state (replaces verifyPhase sub-phases for web demo)
-  const [verifyPhase,        setVerifyPhase]        = useState('idle');
-  const [capturedImage,      setCapturedImage]      = useState(null);
-  const [isVerifying,        setIsVerifying]        = useState(false);
-  const [verificationSuccess,setVerificationSuccess] = useState(false);
+  // Verification sub-phases: 'idle' | 'camera' | 'processing' | 'success'
+  const [verifyPhase,   setVerifyPhase]   = useState('idle');
+  const [capturedImage, setCapturedImage] = useState(null);
 
   // Camera permissions
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const cameraRef = useRef(null);
 
+  // Backend connectivity
+  const [backendStatus, setBackendStatus] = useState(null); // null | 'ok' | 'offline'
+  const locationTimer = useRef(null);
+
   // ── Auto-advance: Splash → Login ───────────────────────────────────────────
   useEffect(() => {
     if (appState !== 0) return;
+    // Check backend health during splash
+    healthCheck()
+      .then(r => setBackendStatus(r?.status === 'ok' ? 'ok' : 'offline'))
+      .catch(() => setBackendStatus('offline'));
     const t = setTimeout(() => setAppState(1), 2000);
     return () => clearTimeout(t);
   }, [appState]);
+
+  // ── Location pings every 15s while on duty ─────────────────────────────────
+  useEffect(() => {
+    if (hasGoneOnDuty && backendStatus === 'ok') {
+      const sendLocation = () => {
+        // Use mock location (Hyderabad) — in production, use expo-location
+        updateOfficerLocation(OFFICER_ID, 17.4482, 78.3914)
+          .then(r => r?.error && console.warn('[Location] ping failed'))
+          .catch(() => {});
+      };
+      sendLocation();
+      locationTimer.current = setInterval(sendLocation, 15000);
+      return () => clearInterval(locationTimer.current);
+    }
+    return () => { if (locationTimer.current) clearInterval(locationTimer.current); };
+  }, [hasGoneOnDuty, backendStatus]);
 
   // ── Show duty popup when arriving at Dashboard (only if not already on duty) ─
   useEffect(() => {
@@ -163,13 +186,15 @@ export default function App() {
     Linking.openURL(`https://maps.google.com/?q=${task.lat},${task.lng}`);
   };
 
-  const handleSupportSubmit = () => {
+  const submitSupport = () => {
+    const dept = selectedDept; // capture before clearing
     setSupportOpen(false);
     setSupportText('');
     setSelectedDept(null);
     setSupportSent(true);
+    // Simulate swarm finding an available worker after 1.5s
     setTimeout(() => {
-      setAssignedSupport({ dept: 'Water & Sanitation', id: 'Unit W-04', eta: '3 mins' });
+      setAssignedSupport({ id: 'WP-892', dept, eta: '4 mins' });
     }, 1500);
   };
 
@@ -179,24 +204,31 @@ export default function App() {
     }
     setVerifyPhase('idle');
     setCapturedImage(null);
-    setIsVerifying(false);
-    setVerificationSuccess(false);
     setAppState(4);
   };
 
   // Shared capture-success handler — called by both the real camera and the web simulator
-  const handleCaptureSuccess = (base64Uri = null) => {
+  const handleCaptureSuccess = async (base64Uri = null) => {
     setCapturedImage(base64Uri);
     setVerifyPhase('processing');
-    setTimeout(() => setVerifyPhase('success'), 3000);
-  };
 
-  const handleSimulateCapture = () => {
-    setIsVerifying(true);
-    setTimeout(() => {
-      setIsVerifying(false);
-      setVerificationSuccess(true);
-    }, 3000);
+    // Call backend verification endpoint
+    if (backendStatus === 'ok' && activeTask) {
+      try {
+        const res = await verifyResolution(
+          OFFICER_ID,
+          activeTask.ticketId || activeTask.id,
+          base64Uri,
+          'Resolution verified by field worker'
+        );
+        console.log('[Verify]', res);
+      } catch (err) {
+        console.warn('[Verify] Backend call failed:', err.message);
+      }
+    }
+
+    // Minimum 3s spinner for UX
+    setTimeout(() => setVerifyPhase('success'), 3000);
   };
 
   const takePhoto = async () => {
@@ -214,8 +246,6 @@ export default function App() {
     setActiveTask(null);
     setCapturedImage(null);
     setVerifyPhase('idle');
-    setIsVerifying(false);
-    setVerificationSuccess(false);
     setAssignedSupport(null);
     setAppState(2);
   };
@@ -257,8 +287,10 @@ export default function App() {
               </TouchableOpacity>
               <Text style={s.headerTitle}>CIVIX</Text>
               <View style={s.liveRow}>
-                <View style={s.liveDot} />
-                <Text style={s.liveText}>LIVE</Text>
+                <View style={[s.liveDot, backendStatus === 'ok' ? {} : { backgroundColor: backendStatus === 'offline' ? T.danger : '#D1D5DB' }]} />
+                <Text style={[s.liveText, backendStatus === 'ok' ? {} : { color: backendStatus === 'offline' ? T.danger : '#D1D5DB' }]}>
+                  {backendStatus === 'ok' ? 'LIVE' : backendStatus === 'offline' ? 'OFFLINE' : '...'}
+                </Text>
               </View>
             </View>
 
@@ -333,17 +365,47 @@ export default function App() {
                 <Text style={s.supportBtnText}>🤝  REQUEST SUPPORT</Text>
               </TouchableOpacity>
 
-              {/* Swarm dispatch confirmation card — appears 1.5s after submit */}
-              {assignedSupport && (
-                <View style={{ marginTop: 16, padding: 16, backgroundColor: '#ECFDF5', borderRadius: 8, borderWidth: 1, borderColor: '#10B981' }}>
-                  <Text style={{ color: '#065F46', fontWeight: 'bold', fontSize: 14 }}>
-                    ✓ SWARM DISPATCHED
-                  </Text>
-                  <Text style={{ color: '#047857', marginTop: 4 }}>
-                    {assignedSupport.dept} ({assignedSupport.id}) is en route. ETA: {assignedSupport.eta}
-                  </Text>
+              {/* ── Assigned Worker Tab ─────────────────────────────────── */}
+              <View style={s.workerTabContainer}>
+                <View style={s.workerTabHeader}>
+                  <View style={[s.workerTabDot, assignedSupport && s.workerTabDotActive]} />
+                  <Text style={s.workerTabTitle}>ASSIGNED WORKER</Text>
                 </View>
-              )}
+
+                {!assignedSupport ? (
+                  <View style={s.workerTabEmpty}>
+                    <Text style={{ fontSize: 28, marginBottom: 8 }}>👷</Text>
+                    <Text style={s.workerTabEmptyText}>No worker assigned yet.</Text>
+                    <Text style={s.workerTabEmptyHint}>Tap "Request Support" above to dispatch a worker from the AI swarm.</Text>
+                  </View>
+                ) : (
+                  <View style={s.workerTabBody}>
+                    <View style={s.workerTabBadge}>
+                      <Text style={s.workerTabBadgeText}>✓  SWARM DISPATCHED</Text>
+                    </View>
+
+                    <View style={s.workerTabRow}>
+                      <Text style={s.workerTabLabel}>UNIT ID</Text>
+                      <Text style={s.workerTabValue}>{assignedSupport.id}</Text>
+                    </View>
+                    <View style={s.workerTabRow}>
+                      <Text style={s.workerTabLabel}>DEPARTMENT</Text>
+                      <Text style={s.workerTabValue}>{assignedSupport.dept}</Text>
+                    </View>
+                    <View style={s.workerTabRow}>
+                      <Text style={s.workerTabLabel}>ETA</Text>
+                      <Text style={[s.workerTabValue, { color: T.success, fontWeight: '800' }]}>{assignedSupport.eta}</Text>
+                    </View>
+                    <View style={[s.workerTabRow, { borderBottomWidth: 0 }]}>
+                      <Text style={s.workerTabLabel}>STATUS</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: T.success }} />
+                        <Text style={[s.workerTabValue, { color: T.success }]}>EN ROUTE</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+              </View>
             </ScrollView>
 
             {/* TASK COMPLETED — always at bottom */}
@@ -357,32 +419,61 @@ export default function App() {
 
       // ── 4: VERIFICATION ──────────────────────────────────────────────────
       case 4:
-        // ── Success screen ────────────────────────────────────────────────
-        if (verificationSuccess) {
+        // ── Web-first guard: skip all camera APIs on web ───────────────────
+        if (Platform.OS === 'web' && verifyPhase === 'camera') {
           return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
-              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#10B981', marginBottom: 20 }}>✓ Verification Successful</Text>
-              <Text style={{ color: '#6B7280', marginBottom: 40 }}>AI Swarm has confirmed resolution. Funds released.</Text>
-              <TouchableOpacity style={{ backgroundColor: '#1F2937', padding: 16, borderRadius: 8 }} onPress={returnToDashboard}>
-                <Text style={{ color: 'white', fontWeight: 'bold' }}>RETURN TO DASHBOARD</Text>
+            <View style={s.camFallback}>
+              <View style={s.camFallbackFrame}>
+                <View style={s.camCornerTL} /><View style={s.camCornerTR} />
+                <View style={s.camCornerBL} /><View style={s.camCornerBR} />
+                <Text style={s.camFallbackIcon}>📷</Text>
+                <Text style={s.camFallbackText}>Camera disabled for Web Demo.</Text>
+              </View>
+              <TouchableOpacity style={s.simBtn} onPress={() => handleCaptureSuccess(null)} activeOpacity={0.85}>
+                <Text style={s.simBtnText}>SIMULATE CAPTURE (WEB DEMO)</Text>
               </TouchableOpacity>
             </View>
           );
         }
 
-        // ── AI verifying spinner ──────────────────────────────────────────
-        if (isVerifying) {
-          return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
-              <ActivityIndicator size="large" color="#3B82F6" />
-              <Text style={{ marginTop: 20, fontSize: 18, color: '#374151', fontWeight: 'bold' }}>AI Swarm Verifying Resolution...</Text>
-            </View>
-          );
-        }
+        // ── Native camera (permission flow) ───────────────────────────────
+        if (verifyPhase === 'camera') {
+          // Permission not yet determined — show loading
+          if (!camPerm) {
+            return (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.bg }}>
+                <ActivityIndicator size="large" color={T.accent} />
+                <Text style={{ marginTop: 12, color: T.textSecondary, fontSize: 14 }}>Checking camera permissions…</Text>
+              </View>
+            );
+          }
 
-        // ── Camera / web simulation ───────────────────────────────────────
-        // On native with permission, show live camera; otherwise show web demo
-        if (Platform.OS !== 'web' && camPerm?.granted) {
+          // Permission denied — prompt user to grant
+          if (!camPerm.granted) {
+            return (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.bg, padding: 32 }}>
+                <Text style={{ fontSize: 48, marginBottom: 16 }}>🔒</Text>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: T.text, textAlign: 'center', marginBottom: 8 }}>
+                  Camera Access Required
+                </Text>
+                <Text style={{ fontSize: 14, color: T.textSecondary, textAlign: 'center', marginBottom: 28, lineHeight: 20 }}>
+                  Civix needs camera access to capture proof-of-resolution photos for incident verification.
+                </Text>
+                <TouchableOpacity
+                  style={[s.completedBtn, { width: '100%' }]}
+                  onPress={requestCamPerm}
+                  activeOpacity={0.85}
+                >
+                  <Text style={s.completedBtnText}>GRANT CAMERA PERMISSION</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleCaptureSuccess(null)} style={{ marginTop: 16 }}>
+                  <Text style={{ color: T.textSecondary, fontSize: 13 }}>SIMULATE CAPTURE (WEB DEMO)</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+
+          // Permission granted — show live CameraView
           return (
             <View style={{ flex: 1, backgroundColor: '#000' }}>
               <CameraView style={{ flex: 1 }} ref={cameraRef} facing="back">
@@ -396,19 +487,89 @@ export default function App() {
           );
         }
 
-        // Web demo fallback (default)
+        // Idle / processing / success
         return (
-          <View style={{ flex: 1, backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center' }}>
-            <View style={{ width: 300, height: 300, borderWidth: 2, borderColor: 'white', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginBottom: 40 }}>
-              <Text style={{ color: 'white' }}>Camera disabled for Web Demo.</Text>
+          <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
+            {verifyPhase === 'idle' && (
+              <View style={s.header}>
+                <TouchableOpacity onPress={() => setAppState(3)} hitSlop={HIT} style={s.backBtn}>
+                  <Text style={s.backArrow}>←</Text>
+                  <Text style={s.backLabel}>Back</Text>
+                </TouchableOpacity>
+                <Text style={s.headerTitle}>VERIFICATION</Text>
+                <View style={{ width: 70 }} />
+              </View>
+            )}
+
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              {verifyPhase === 'idle' && (
+                <>
+                  <View style={s.verifyIconWrap}>
+                    <Text style={{ fontSize: 44 }}>📸</Text>
+                  </View>
+                  <Text style={s.verifyTitle}>Photo Verification Required</Text>
+                  <Text style={s.verifyDesc}>
+                    Take a live photo to confirm the issue is resolved.{'\n'}
+                    This triggers automatic fund release via the AI Swarm.
+                  </Text>
+                  {activeTask && (
+                    <View style={s.taskChip}>
+                      <Text style={s.taskChipText} numberOfLines={1}>📌  {activeTask.title}</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={[s.completedBtn, { width: '100%', marginTop: 32 }]}
+                    onPress={() => setVerifyPhase('camera')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={s.completedBtnText}>PHOTO VERIFICATION</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {(verifyPhase === 'processing' || verifyPhase === 'success') && (
+                <>
+                  {/* Thumbnail */}
+                  <View style={s.thumbWrap}>
+                    {capturedImage ? (
+                      <Image source={{ uri: capturedImage }} style={s.thumb} resizeMode="cover" />
+                    ) : (
+                      <View style={[s.thumb, { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ fontSize: 40 }}>📷</Text>
+                      </View>
+                    )}
+                    {verifyPhase === 'success' && (
+                      <View style={s.thumbCheck}><Text style={{ fontSize: 18, color: '#fff', fontWeight: '900' }}>✓</Text></View>
+                    )}
+                  </View>
+
+                  {verifyPhase === 'processing' && (
+                    <>
+                      <ActivityIndicator size="large" color={T.accent} style={{ marginBottom: 16 }} />
+                      <Text style={s.processingTitle}>AI Swarm Verifying Resolution…</Text>
+                      <Text style={s.processingHint}>Analyzing photo, GPS & incident data</Text>
+                    </>
+                  )}
+
+                  {verifyPhase === 'success' && (
+                    <View style={{ alignItems: 'center', width: '100%' }}>
+                      <Text style={{ fontSize: 38, marginBottom: 10 }}>✅</Text>
+                      <Text style={s.successTitle}>Verification Successful</Text>
+                      <Text style={s.successSub}>Funds Released</Text>
+                      <View style={s.successCard}>
+                        <Text style={s.successCardText}>
+                          AI Swarm confirmed the resolution. Incident closed and payment processed automatically.
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={[s.completedBtn, { width: '100%' }]} onPress={returnToDashboard} activeOpacity={0.85}>
+                        <Text style={s.completedBtnText}>RETURN TO DASHBOARD</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              )}
             </View>
-            <TouchableOpacity
-              style={{ backgroundColor: '#3B82F6', width: '80%', padding: 20, borderRadius: 8, alignItems: 'center' }}
-              onPress={handleSimulateCapture}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>SIMULATE CAPTURE (WEB DEMO)</Text>
-            </TouchableOpacity>
-          </View>
+          </SafeAreaView>
         );
 
       default:
@@ -497,7 +658,7 @@ export default function App() {
               {/* Submit disabled until a dept chip is selected */}
               <TouchableOpacity
                 style={[s.submitBtn, !selectedDept && s.submitBtnDisabled]}
-                onPress={selectedDept ? handleSupportSubmit : undefined}
+                onPress={selectedDept ? submitSupport : undefined}
                 activeOpacity={selectedDept ? 0.85 : 1}
               >
                 <Text style={s.submitBtnText}>
@@ -790,5 +951,96 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: '#1E3A5F',
     lineHeight: 22,
+  },
+
+  // ── Assigned Worker Tab ──────────────────────────────────────────────────
+  workerTabContainer: {
+    backgroundColor: T.card,
+    borderRadius: T.radius,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: T.border,
+    overflow: 'hidden',
+    ...T.shadow,
+  },
+  workerTabHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+    backgroundColor: '#FAFAFA',
+  },
+  workerTabDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#D1D5DB',
+  },
+  workerTabDotActive: {
+    backgroundColor: T.success,
+  },
+  workerTabTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: T.text,
+    letterSpacing: 2,
+  },
+  workerTabEmpty: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  workerTabEmptyText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: T.textSecondary,
+  },
+  workerTabEmptyHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  workerTabBody: {
+    padding: 16,
+  },
+  workerTabBadge: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  workerTabBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+    letterSpacing: 0.5,
+  },
+  workerTabRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  workerTabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: T.textSecondary,
+    letterSpacing: 1.5,
+  },
+  workerTabValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: T.text,
   },
 });
