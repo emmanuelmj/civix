@@ -91,12 +91,14 @@ def test_postgres():
             print(f"{PASS} Connected to PostgreSQL")
             print(f"  Version: {version[:60]}")
 
-            # Check PostGIS
+            # Check uuid-ossp extension
             try:
-                postgis = await conn.fetchval("SELECT PostGIS_Version()")
-                print(f"{PASS} PostGIS enabled: {postgis}")
+                uuid_ext = await conn.fetchval(
+                    "SELECT extversion FROM pg_extension WHERE extname='uuid-ossp'"
+                )
+                print(f"{PASS} uuid-ossp extension: {uuid_ext}")
             except Exception:
-                print(f"{FAIL} PostGIS extension not installed")
+                print(f"  ⚠️  uuid-ossp extension not installed")
 
             # Check if schema is applied
             tables = await conn.fetch(

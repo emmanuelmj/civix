@@ -31,9 +31,19 @@ from pydantic import BaseModel, Field
 try:
     from backend.swarm.graph import compile_graph, PulseState
     from backend.swarm.pinecone_watcher import PineconeService, PineconeWatcher, extract_metadata
+    from backend.database.db import (
+        init_pool, close_pool, insert_pulse_event, update_event_status,
+        insert_dispatch_log, get_officers, update_officer_location,
+        update_officer_status, find_nearest_officer, list_events, get_event,
+    )
 except ImportError:
     from swarm.graph import compile_graph, PulseState
     from swarm.pinecone_watcher import PineconeService, PineconeWatcher, extract_metadata
+    from database.db import (
+        init_pool, close_pool, insert_pulse_event, update_event_status,
+        insert_dispatch_log, get_officers, update_officer_location,
+        update_officer_status, find_nearest_officer, list_events, get_event,
+    )
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -240,6 +250,45 @@ async def process_event_through_pipeline(event_data: dict[str, Any]) -> dict[str
 
     await manager.broadcast(dispatch_payload)
 
+    # ── 6. Persist to PostgreSQL ──────────────────────────────────
+    try:
+        coords = final_state["coordinates"]
+        await insert_pulse_event({
+            "event_id": event_id,
+            "citizen_id": citizen_id or None,
+            "citizen_name": citizen_name or None,
+            "translated_description": event_data["translated_description"],
+            "domain": final_state["domain"],
+            "issue_type": issue_type or None,
+            "latitude": coords.get("lat", 0),
+            "longitude": coords.get("lng", 0),
+            "sentiment_score": sentiment if isinstance(sentiment, int) else 5,
+            "panic_flag": bool(panic_flag),
+            "source": channel,
+            "raw_input": event_data.get("original_text", ""),
+            "image_url": event_data.get("image_url"),
+            "audio_url": event_data.get("audio_url"),
+            "impact_score": final_state["impact_score"],
+            "severity_color": final_state["severity_color"],
+            "cluster_found": final_state["cluster_found"],
+            "master_event_id": None,  # cluster_id is synthetic, not a real FK
+            "assigned_officer_id": officer_id if officer_id != "N/A" else None,
+            "status": "DISPATCHED" if officer_id != "N/A" else "ANALYZING",
+        })
+
+        if officer_id != "N/A":
+            await insert_dispatch_log(
+                event_id=event_id,
+                officer_id=officer_id,
+                action="DISPATCHED",
+                notes=f"Auto-dispatched by swarm. Distance: {distance}km. Score: {final_state['impact_score']}",
+            )
+            await update_officer_status(officer_id, "DISPATCHED")
+
+        logger.info(f"Event {event_id} persisted to PostgreSQL")
+    except Exception as e:
+        logger.warning(f"DB persistence failed (non-fatal): {e}")
+
     logger.info(
         f"Pipeline complete for {event_id} | "
         f"Score: {final_state['impact_score']} | "
@@ -257,6 +306,13 @@ async def process_event_through_pipeline(event_data: dict[str, Any]) -> dict[str
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global swarm_app, pinecone_service, watcher
+
+    # Initialize PostgreSQL connection pool
+    try:
+        await init_pool()
+        logger.info("PostgreSQL connection pool ready.")
+    except Exception as e:
+        logger.warning(f"PostgreSQL not available: {e} (running without DB persistence)")
 
     # Compile LangGraph pipeline
     swarm_app = compile_graph()
@@ -277,6 +333,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if watcher:
         await watcher.stop()
+    await close_pool()
     logger.info("Shutting down Civix-Pulse backend.")
 
 # ---------------------------------------------------------------------------
@@ -510,6 +567,13 @@ class VerifyResolutionRequest(BaseModel):
 async def officer_update_location(payload: LocationUpdate) -> dict[str, Any]:
     """Field worker app pings this to share live GPS location."""
     logger.info(f"Officer {payload.officer_id} location: ({payload.lat}, {payload.lng})")
+
+    # Persist to PostgreSQL
+    try:
+        await update_officer_location(payload.officer_id, payload.lat, payload.lng)
+    except Exception as e:
+        logger.warning(f"DB location update failed: {e}")
+
     # Broadcast to Command Center dashboard
     await manager.broadcast({
         "event_type": "OFFICER_LOCATION",
@@ -542,6 +606,25 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
         "timestamp": time.time(),
     }
 
+    # Persist to PostgreSQL
+    try:
+        from datetime import datetime, timezone
+        await update_event_status(
+            payload.event_id,
+            "RESOLVED",
+            resolution_verified=True,
+            resolved_at=datetime.now(timezone.utc),
+        )
+        await insert_dispatch_log(
+            event_id=payload.event_id,
+            officer_id=payload.officer_id,
+            action="RESOLVED",
+            notes=payload.notes or "Verified via field worker app",
+        )
+        await update_officer_status(payload.officer_id, "AVAILABLE")
+    except Exception as e:
+        logger.warning(f"DB resolution update failed: {e}")
+
     # Broadcast resolution to Command Center
     await manager.broadcast({
         "event_type": "RESOLUTION_VERIFIED",
@@ -554,6 +637,58 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
         "confidence": verification_result["confidence"],
         "message": f"Event {payload.event_id} verified and closed.",
     }
+
+
+# ── Data Query Endpoints (for dashboard) ────────────────────────
+
+@app.get("/api/v1/events")
+async def api_list_events(
+    limit: int = 50,
+    status: str | None = None,
+    domain: str | None = None,
+) -> dict[str, Any]:
+    """List recent pulse events from PostgreSQL."""
+    try:
+        events = await list_events(limit=limit, status=status, domain=domain)
+        # Convert datetime objects for JSON serialization
+        for e in events:
+            for k, v in e.items():
+                if hasattr(v, "isoformat"):
+                    e[k] = v.isoformat()
+        return {"status": "ok", "count": len(events), "events": events}
+    except Exception as e:
+        logger.error(f"Failed to list events: {e}")
+        return {"status": "error", "error": str(e), "events": []}
+
+
+@app.get("/api/v1/events/{event_id}")
+async def api_get_event(event_id: str) -> dict[str, Any]:
+    """Get a single event by ID."""
+    try:
+        event = await get_event(event_id)
+        if event is None:
+            return {"status": "not_found"}
+        for k, v in event.items():
+            if hasattr(v, "isoformat"):
+                event[k] = v.isoformat()
+        return {"status": "ok", "event": event}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/api/v1/officers")
+async def api_list_officers(status: str | None = None) -> dict[str, Any]:
+    """List officers from PostgreSQL."""
+    try:
+        officers = await get_officers(status=status)
+        for o in officers:
+            for k, v in o.items():
+                if hasattr(v, "isoformat"):
+                    o[k] = v.isoformat()
+        return {"status": "ok", "count": len(officers), "officers": officers}
+    except Exception as e:
+        logger.error(f"Failed to list officers: {e}")
+        return {"status": "error", "error": str(e), "officers": []}
 
 
 # ---------------------------------------------------------------------------
