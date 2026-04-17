@@ -10,6 +10,8 @@ const navItems: { label: TabId; icon: string }[] = [
   { label: "Live Grid", icon: "◫" },
   { label: "Intake Feed", icon: "◉" },
   { label: "Swarm Log", icon: "⧉" },
+  { label: "Agent Canvas", icon: "⬡" },
+  { label: "Reports", icon: "▤" },
   { label: "Analytics", icon: "◔" },
   { label: "Officers", icon: "⊕" },
   { label: "Settings", icon: "⚙" },

@@ -6,6 +6,8 @@ export type TabId =
   | "Live Grid"
   | "Intake Feed"
   | "Swarm Log"
+  | "Agent Canvas"
+  | "Reports"
   | "Analytics"
   | "Officers"
   | "Settings";
