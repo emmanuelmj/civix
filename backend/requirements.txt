@@ -1,0 +1,16 @@
+# Civix-Pulse Backend — Dependencies
+# All LLM inference is cloud-only. No local model packages.
+
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+websockets==15.0.1
+pydantic==2.11.3
+python-dotenv==1.1.0
+
+# LangChain + LangGraph (agent orchestration)
+langchain==0.3.25
+langchain-openai==0.3.12
+langgraph==0.4.1
+
+# LangSmith (tracing & observability)
+langsmith==0.3.45

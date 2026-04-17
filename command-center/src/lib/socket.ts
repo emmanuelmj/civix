@@ -13,7 +13,44 @@ const CONNECT_TIMEOUT = 3000;
 
 // ── Backend payload mappers ────────────────────────────────────────
 
-function mapBackendEvent(raw: Record<string, unknown>): PulseEvent {
+// Severity from hex color
+function colorToSeverity(hex: string): PulseEvent["severity"] {
+  const c = hex.toLowerCase();
+  if (c === "#ff0000" || c.includes("dc2626")) return "critical";
+  if (c === "#ffa500") return "high";
+  return "standard";
+}
+
+// Map the REAL backend format (emmanuelmj/civix):
+//   { event_type: "NEW_DISPATCH", data: { pulse_event: {...}, assigned_officer: {...} } }
+function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
+  const data = payload.data as Record<string, unknown>;
+  const pe = data.pulse_event as Record<string, unknown>;
+  const off = data.assigned_officer as Record<string, unknown> | null;
+  const coords = pe.coordinates as { lat: number; lng: number } | undefined;
+  const severityColor = (pe.severity_color as string) || "#FFA500";
+
+  return {
+    event_id: (pe.event_id as string) || crypto.randomUUID(),
+    status: off ? "DISPATCHED" : "ANALYZING",
+    coordinates: coords || { lat: 17.385, lng: 78.4867 },
+    severity_color: severityColor,
+    severity: colorToSeverity(severityColor),
+    domain: ((pe.category as string) || "Municipal") as PulseEvent["domain"],
+    summary: (pe.category as string) || "New grievance event",
+    assigned_officer: off ? {
+      officer_id: (off.officer_id as string) || "OP-000",
+      current_lat: off.current_lat as number,
+      current_lng: off.current_lng as number,
+    } : undefined,
+    log_message: `Impact score: ${pe.impact_score}. ${pe.cluster_found ? "Cluster detected." : "New event."} ${off ? `Dispatched: ${off.officer_id}` : "Awaiting dispatch."}`,
+    timestamp: Date.now(),
+  };
+}
+
+// Map our own generic format:
+//   { type: "pulse_update", data: { event_id, status, coordinates, ... } }
+function mapGenericEvent(raw: Record<string, unknown>): PulseEvent {
   const coords = raw.coordinates as { lat: number; lng: number } | undefined;
   const officer = raw.assigned_officer as {
     officer_id: string;
@@ -22,19 +59,13 @@ function mapBackendEvent(raw: Record<string, unknown>): PulseEvent {
   } | undefined;
 
   const severityColor = (raw.severity_color as string) || "#ca8a04";
-  let severity: PulseEvent["severity"] = "standard";
-  if (severityColor.toLowerCase().includes("dc2626") || severityColor.toLowerCase() === "#ff0000") {
-    severity = raw.severity === "high" ? "high" : "critical";
-  } else if (raw.severity) {
-    severity = raw.severity as PulseEvent["severity"];
-  }
 
   return {
     event_id: (raw.event_id as string) || crypto.randomUUID(),
     status: (raw.status as PulseEvent["status"]) || "NEW",
     coordinates: coords || { lat: 17.385, lng: 78.4867 },
     severity_color: severityColor,
-    severity,
+    severity: raw.severity ? (raw.severity as PulseEvent["severity"]) : colorToSeverity(severityColor),
     domain: (raw.domain as PulseEvent["domain"]) || "Municipal",
     summary: (raw.summary as string) || (raw.log_message as string) || "New event",
     assigned_officer: officer,
@@ -79,10 +110,17 @@ interface UsePulseStreamReturn {
 }
 
 // ── WebSocket message protocol ─────────────────────────────────────
-// Backend sends JSON with { type: "pulse_update" | "intake_update" | "swarm_log" | "event_status", data: {...} }
+// Real backend (emmanuelmj/civix) sends:  { event_type: "NEW_DISPATCH", data: { pulse_event, assigned_officer } }
+// Also sends:                              { event_type: "PONG", data: "..." }
+// Our generic format sends:                { type: "pulse_update" | "intake_update" | "swarm_log" | "event_status", data: {...} }
 
-interface WSMessage {
-  type: "pulse_update" | "intake_update" | "swarm_log" | "event_status";
+interface WSMessageGeneric {
+  type: string;
+  data: Record<string, unknown>;
+}
+
+interface WSMessageReal {
+  event_type: string;
   data: Record<string, unknown>;
 }
 
@@ -157,42 +195,60 @@ export function usePulseStream(): UsePulseStreamReturn {
 
   // ── Message handler ────────────────────────────────────────────
 
-  const handleMessage = useCallback((msg: WSMessage) => {
-    switch (msg.type) {
+  const addEventWithLog = useCallback((evt: PulseEvent) => {
+    setEvents((prev) => [evt, ...prev].slice(0, MAX_ITEMS));
+    if (evt.log_message) {
+      const logType: SwarmLogEntry["type"] =
+        evt.status === "DISPATCHED" ? "dispatch" : evt.status === "RESOLVED" ? "verification" : "analysis";
+      setLogs((prev) => [
+        {
+          id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          type: logType,
+          message: evt.log_message,
+          timestamp: evt.timestamp,
+          event_id: evt.event_id,
+        },
+        ...prev,
+      ].slice(0, MAX_ITEMS));
+    }
+  }, []);
+
+  const handleRawMessage = useCallback((raw: Record<string, unknown>) => {
+    // Real backend format: { event_type: "NEW_DISPATCH", data: {...} }
+    if (raw.event_type === "NEW_DISPATCH" && raw.data) {
+      const evt = mapRealBackendDispatch(raw);
+      addEventWithLog(evt);
+      return;
+    }
+    // Ignore PONG keepalives
+    if (raw.event_type === "PONG") return;
+
+    // Generic / mock format: { type: "pulse_update" | "intake_update" | ..., data: {...} }
+    const msgType = raw.type as string | undefined;
+    const msgData = raw.data as Record<string, unknown> | undefined;
+    if (!msgType || !msgData) return;
+
+    switch (msgType) {
       case "pulse_update": {
-        const evt = mapBackendEvent(msg.data);
-        setEvents((prev) => [evt, ...prev].slice(0, MAX_ITEMS));
-        if (evt.log_message) {
-          const logType: SwarmLogEntry["type"] =
-            evt.status === "DISPATCHED" ? "dispatch" : evt.status === "RESOLVED" ? "verification" : "analysis";
-          setLogs((prev) => [
-            {
-              id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-              type: logType,
-              message: evt.log_message,
-              timestamp: evt.timestamp,
-              event_id: evt.event_id,
-            },
-            ...prev,
-          ].slice(0, MAX_ITEMS));
-        }
+        const evt = mapGenericEvent(msgData);
+        addEventWithLog(evt);
         break;
       }
       case "intake_update":
-        setIntake((prev) => [mapBackendIntake(msg.data), ...prev].slice(0, MAX_ITEMS));
+        setIntake((prev) => [mapBackendIntake(msgData), ...prev].slice(0, MAX_ITEMS));
         break;
       case "swarm_log":
-        setLogs((prev) => [mapBackendLog(msg.data), ...prev].slice(0, MAX_ITEMS));
+        setLogs((prev) => [mapBackendLog(msgData), ...prev].slice(0, MAX_ITEMS));
         break;
       case "event_status": {
-        const { event_id, status: newStatus } = msg.data as { event_id: string; status: PulseEvent["status"] };
+        const { event_id, status: newStatus } = msgData as { event_id: string; status: PulseEvent["status"] };
         setEvents((prev) =>
           prev.map((e) => (e.event_id === event_id ? { ...e, status: newStatus } : e))
         );
         break;
       }
     }
-  }, []);
+  }, [addEventWithLog]);
 
   // ── WebSocket connect with exponential backoff ─────────────────
 
@@ -228,10 +284,8 @@ export function usePulseStream(): UsePulseStreamReturn {
 
     ws.onmessage = (event) => {
       try {
-        const parsed = JSON.parse(event.data) as WSMessage;
-        if (parsed.type && parsed.data) {
-          handleMessage(parsed);
-        }
+        const parsed = JSON.parse(event.data) as Record<string, unknown>;
+        handleRawMessage(parsed);
       } catch {
         // Ignore malformed messages
       }
@@ -258,7 +312,7 @@ export function usePulseStream(): UsePulseStreamReturn {
     ws.onerror = () => {
       // onclose will fire after onerror — reconnect logic handled there
     };
-  }, [handleMessage, startMockMode, stopMock]);
+  }, [handleRawMessage, startMockMode, stopMock]);
 
   // ── Lifecycle ──────────────────────────────────────────────────
 
