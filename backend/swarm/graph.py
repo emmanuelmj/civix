@@ -408,20 +408,14 @@ async def cluster_amplifier_node(state: PulseState) -> dict:
 # Node 4: Dispatch Agent (Domain-aware Officer Matching)
 # ---------------------------------------------------------------------------
 
-# Officer pool with domain skills and positions across Hyderabad
+# Officer pool matching the PostgreSQL seed data
 OFFICER_POOL: list[dict[str, Any]] = [
-    {"officer_id": "OP-441", "name": "Raj Kumar",     "skills": ["WATER", "MUNICIPAL"],    "lat": 17.4401, "lng": 78.3489},
-    {"officer_id": "OP-227", "name": "Priya Sharma",  "skills": ["ELECTRICITY", "EMERGENCY"], "lat": 17.4500, "lng": 78.4900},
-    {"officer_id": "OP-318", "name": "Ahmed Khan",    "skills": ["TRAFFIC", "CONSTRUCTION"], "lat": 17.4947, "lng": 78.3996},
-    {"officer_id": "OP-512", "name": "Lakshmi Devi",  "skills": ["MUNICIPAL", "WATER"],    "lat": 17.3616, "lng": 78.4747},
-    {"officer_id": "OP-109", "name": "Venkat Rao",    "skills": ["EMERGENCY", "ELECTRICITY"], "lat": 17.4156, "lng": 78.4347},
-    {"officer_id": "OP-663", "name": "Fatima Begum",  "skills": ["WATER", "CONSTRUCTION"], "lat": 17.4534, "lng": 78.5267},
-    {"officer_id": "OP-774", "name": "Suresh Reddy",  "skills": ["TRAFFIC", "MUNICIPAL"],  "lat": 17.4969, "lng": 78.3579},
-    {"officer_id": "OP-155", "name": "Ananya Iyer",   "skills": ["ELECTRICITY", "EMERGENCY"], "lat": 17.3604, "lng": 78.4736},
-    {"officer_id": "OP-892", "name": "Mohd Irfan",    "skills": ["CONSTRUCTION", "EMERGENCY"], "lat": 17.4849, "lng": 78.3942},
-    {"officer_id": "OP-346", "name": "Kavitha Nair",  "skills": ["MUNICIPAL", "TRAFFIC"],  "lat": 17.4300, "lng": 78.4820},
-    {"officer_id": "OP-501", "name": "Ravi Teja",     "skills": ["WATER", "EMERGENCY"],    "lat": 17.3997, "lng": 78.5594},
-    {"officer_id": "OP-213", "name": "Meera Das",     "skills": ["ELECTRICITY", "CONSTRUCTION"], "lat": 17.4632, "lng": 78.3522},
+    {"officer_id": "OP-101", "name": "Rajesh Kumar",     "skills": ["MUNICIPAL", "WATER"],       "lat": 17.3850, "lng": 78.4867},
+    {"officer_id": "OP-102", "name": "Priya Sharma",     "skills": ["TRAFFIC"],                  "lat": 17.3616, "lng": 78.4747},
+    {"officer_id": "OP-104", "name": "Sneha Patel",      "skills": ["MUNICIPAL", "ELECTRICITY"], "lat": 17.4156, "lng": 78.4347},
+    {"officer_id": "OP-105", "name": "Vikram Singh",     "skills": ["WATER"],                    "lat": 17.3950, "lng": 78.5100},
+    {"officer_id": "OP-106", "name": "Ananya Desai",     "skills": ["TRAFFIC", "MUNICIPAL"],     "lat": 17.3750, "lng": 78.4500},
+    {"officer_id": "OP-108", "name": "Kavitha Nair",     "skills": ["MUNICIPAL"],                "lat": 17.4260, "lng": 78.4200},
 ]
 
 # Track which officers are currently assigned
