@@ -434,6 +434,41 @@ export async function triggerAnalysis(): Promise<{
   }
 }
 
+// ── Single Demo Trigger — sends one specific complaint through full pipeline ──
+
+export async function triggerSingleDemo(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  const demoPayload = {
+    event_id: `demo-pulse-${Date.now().toString(36)}`,
+    translated_description:
+      "Massive water pipe burst flooding the main intersection near the school.",
+    domain: "MUNICIPAL",
+    coordinates: { lat: 17.4482, lng: 78.3914 },
+  };
+
+  try {
+    const res = await fetch(`${API_URL}/api/v1/trigger-analysis`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(demoPayload),
+    });
+    if (!res.ok) {
+      return { ok: false, message: `Backend returned ${res.status}` };
+    }
+    const data = await res.json();
+    const score = data?.data?.pulse_event?.impact_score ?? "—";
+    const officer = data?.data?.assigned_officer?.name ?? data?.data?.assigned_officer?.officer_id ?? "None";
+    return {
+      ok: true,
+      message: `Score ${score} → ${officer}`,
+    };
+  } catch {
+    return { ok: false, message: "Backend unreachable." };
+  }
+}
+
 // ── Pinecone status — for Settings view ────────────────────────────
 
 export async function fetchPineconeStatus(): Promise<PineconeStatus | null> {

@@ -12,7 +12,7 @@ import { IntakeFeedView } from "@/components/IntakeFeedView";
 import { AgentCanvasView } from "@/components/AgentCanvasView";
 import { ExecutiveReportsView } from "@/components/ExecutiveReportsView";
 import { OfficersView } from "@/components/OfficersView";
-import { usePulseStream, triggerAnalysis, fetchPineconeStatus, triggerRescan } from "@/lib/socket";
+import { usePulseStream, triggerAnalysis, triggerSingleDemo, fetchPineconeStatus, triggerRescan } from "@/lib/socket";
 import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus } from "@/lib/types";
 import { useDashboard } from "@/lib/dashboard-context";
 
@@ -30,6 +30,15 @@ export default function DashboardPage() {
     setTriggering(true);
     setTriggerMsg("");
     const result = await triggerAnalysis();
+    setTriggerMsg(result.message);
+    setTriggering(false);
+    setTimeout(() => setTriggerMsg(""), 4000);
+  };
+
+  const handleDemoTrigger = async () => {
+    setTriggering(true);
+    setTriggerMsg("");
+    const result = await triggerSingleDemo();
     setTriggerMsg(result.message);
     setTriggering(false);
     setTimeout(() => setTriggerMsg(""), 4000);
@@ -125,6 +134,18 @@ export default function DashboardPage() {
           {/* Actions group */}
           <div className="flex items-center gap-3 shrink-0">
             <button
+              onClick={handleDemoTrigger}
+              disabled={triggering}
+              className="px-3 py-2 rounded-lg text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
+              style={{
+                background: triggering ? "var(--bg-surface)" : "var(--accent-green)",
+                color: triggering ? "var(--fg-muted)" : "#fff",
+                boxShadow: triggering ? "none" : "0 0 12px rgba(34,197,94,0.3)",
+              }}
+            >
+              {triggering ? "⏳…" : "🎯 Demo"}
+            </button>
+            <button
               onClick={handleTrigger}
               disabled={triggering}
               className="px-4 py-2 rounded-lg text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
@@ -134,7 +155,7 @@ export default function DashboardPage() {
                 boxShadow: triggering ? "none" : "0 0 15px rgba(0,122,255,0.3)",
               }}
             >
-              {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
+              {triggering ? "⏳ Processing…" : "⚡ Trigger Swarm"}
             </button>
             {triggerMsg && (
               <span className="text-xs font-mono px-2.5 py-1 rounded-lg animate-pulse"
@@ -157,7 +178,7 @@ export default function DashboardPage() {
         </div>
         {/* Map — fluid fill */}
         <div className="flex-1 min-h-0 relative">
-          <MapLayer events={displayEvents} onViewDetails={setSelectedEvent} />
+          <MapLayer events={displayEvents} officers={officers} onViewDetails={setSelectedEvent} />
         </div>
       </div>
 
@@ -171,7 +192,7 @@ export default function DashboardPage() {
       <div className="flex-1 lg:hidden overflow-hidden min-h-0 min-w-0">
         {mobileTab === "map" && (
           <div className="h-full w-full relative">
-            <MapLayer events={displayEvents} onViewDetails={setSelectedEvent} />
+            <MapLayer events={displayEvents} officers={officers} onViewDetails={setSelectedEvent} />
           </div>
         )}
         {mobileTab === "intake" && (

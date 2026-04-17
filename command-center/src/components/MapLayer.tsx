@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import type { PulseEvent } from "@/lib/types";
+import type { Officer, PulseEvent } from "@/lib/types";
 
 const HYDERABAD: [number, number] = [78.4867, 17.385]; // [lng, lat] for MapLibre
 
@@ -38,17 +38,20 @@ type MapLibreType = typeof import("maplibre-gl");
 
 interface MapLayerProps {
   events: PulseEvent[];
+  officers?: Officer[];
   onEventClick?: (event: PulseEvent) => void;
   onViewDetails?: (event: PulseEvent) => void;
 }
 
-export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps) {
+export function MapLayer({ events, officers = [], onEventClick, onViewDetails }: MapLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mlRef = useRef<MapLibreType | null>(null);
   const readyRef = useRef(false);
   const eventsRef = useRef<PulseEvent[]>(events);
   eventsRef.current = events;
+  const officersRef = useRef<Officer[]>(officers);
+  officersRef.current = officers;
   const onEventClickRef = useRef(onEventClick);
   onEventClickRef.current = onEventClick;
   const onViewDetailsRef = useRef(onViewDetails);
@@ -82,17 +85,48 @@ export function MapLayer({ events, onEventClick, onViewDetails }: MapLayerProps)
       },
     }));
 
-    // Build GeoJSON for officer blips
-    const officerFeatures: GeoJSON.Feature[] = currentEvents
-      .filter((e) => e.assigned_officer)
-      .map((e) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [e.assigned_officer!.current_lng, e.assigned_officer!.current_lat],
-        },
-        properties: { id: e.event_id, officer_id: e.assigned_officer!.officer_id },
-      }));
+    // Build GeoJSON for officer blips (merge event-assigned + DB officers)
+    const seenOfficerIds = new Set<string>();
+    const officerFeatures: GeoJSON.Feature[] = [];
+
+    // Officers from dispatch events
+    for (const e of currentEvents) {
+      if (e.assigned_officer && e.assigned_officer.current_lat && e.assigned_officer.current_lng) {
+        seenOfficerIds.add(e.assigned_officer.officer_id);
+        officerFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [e.assigned_officer.current_lng, e.assigned_officer.current_lat],
+          },
+          properties: {
+            id: e.event_id,
+            officer_id: e.assigned_officer.officer_id,
+            name: e.assigned_officer.name ?? e.assigned_officer.officer_id,
+            status: "DISPATCHED",
+          },
+        });
+      }
+    }
+
+    // DB officers not already shown via events
+    for (const o of officersRef.current) {
+      if (!seenOfficerIds.has(o.officer_id) && o.current_lat && o.current_lng) {
+        officerFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [o.current_lng, o.current_lat],
+          },
+          properties: {
+            id: `officer-${o.officer_id}`,
+            officer_id: o.officer_id,
+            name: o.name ?? o.officer_id,
+            status: o.status ?? "AVAILABLE",
+          },
+        });
+      }
+    }
 
     // Build GeoJSON for dispatch lines
     const lineFeatures: GeoJSON.Feature[] = currentEvents
