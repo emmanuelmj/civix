@@ -167,15 +167,21 @@ async def run_tests():
                     "coordinates": {"lat": 17.44, "lng": 78.39}
                 })
 
-            # Should receive the broadcast
-            msg = await asyncio.wait_for(ws.recv(), timeout=10)
-            data = json.loads(msg)
+            # Drain messages until we get the NEW_DISPATCH
+            data = None
+            for _ in range(10):
+                msg = await asyncio.wait_for(ws.recv(), timeout=10)
+                parsed = json.loads(msg)
+                if parsed.get("event_type") == "NEW_DISPATCH":
+                    data = parsed
+                    break
+
             ok = (
-                data.get("event_type") == "NEW_DISPATCH"
+                data is not None
                 and data["data"]["pulse_event"]["event_id"] == "test-ws-broadcast"
             )
             record("t8", "WebSocket receives broadcast", "websocket", ok,
-                   f"event_id={data['data']['pulse_event']['event_id']}")
+                   f"event_id={data['data']['pulse_event']['event_id']}" if data else "no NEW_DISPATCH received")
     except Exception as e:
         record("t8", "WebSocket receives broadcast", "websocket", False, str(e))
 
@@ -228,22 +234,33 @@ async def run_tests():
                     "coordinates": {"lat": 17.445, "lng": 78.385}
                 })
 
-            msg = await asyncio.wait_for(ws.recv(), timeout=10)
-            data = json.loads(msg)
-            # Verify the payload matches the frontend's expected format
-            has_event_type = data.get("event_type") == "NEW_DISPATCH"
-            has_pulse_event = "pulse_event" in data.get("data", {})
-            has_officer = "assigned_officer" in data.get("data", {})
-            pe = data["data"]["pulse_event"]
-            has_required_fields = all(k in pe for k in ["event_id", "category", "impact_score", "severity_color", "coordinates"])
+            # Drain messages until we get the NEW_DISPATCH
+            data = None
+            for _ in range(10):
+                msg = await asyncio.wait_for(ws.recv(), timeout=10)
+                parsed = json.loads(msg)
+                if parsed.get("event_type") == "NEW_DISPATCH":
+                    data = parsed
+                    break
 
-            record("t11", "Frontend WS format compatible", "integration",
-                   has_event_type and has_pulse_event and has_officer and has_required_fields,
-                   f"event_type={has_event_type} pulse_event={has_pulse_event} officer={has_officer} fields={has_required_fields}")
+            if data is None:
+                record("t11", "Frontend WS format compatible", "integration", False, "no NEW_DISPATCH received")
+                record("t12", "End-to-end: POST → LangGraph → WS → client", "integration", False, "no NEW_DISPATCH received")
+            else:
+                # Verify the payload matches the frontend's expected format
+                has_event_type = data.get("event_type") == "NEW_DISPATCH"
+                has_pulse_event = "pulse_event" in data.get("data", {})
+                has_officer = "assigned_officer" in data.get("data", {})
+                pe = data["data"]["pulse_event"]
+                has_required_fields = all(k in pe for k in ["event_id", "category", "impact_score", "severity_color", "coordinates"])
 
-            record("t12", "End-to-end: POST → LangGraph → WS → client", "integration",
-                   has_event_type and pe["event_id"] == "test-integration-final",
-                   f"event_id={pe['event_id']} score={pe['impact_score']} color={pe['severity_color']}")
+                record("t11", "Frontend WS format compatible", "integration",
+                       has_event_type and has_pulse_event and has_officer and has_required_fields,
+                       f"event_type={has_event_type} pulse_event={has_pulse_event} officer={has_officer} fields={has_required_fields}")
+
+                record("t12", "End-to-end: POST → LangGraph → WS → client", "integration",
+                       has_event_type and pe["event_id"] == "test-integration-final",
+                       f"event_id={pe['event_id']} score={pe['impact_score']} color={pe['severity_color']}")
 
     except Exception as e:
         record("t11", "Frontend WS format compatible", "integration", False, str(e))

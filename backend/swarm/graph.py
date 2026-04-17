@@ -56,6 +56,7 @@ class PulseState(TypedDict):
     cluster_found: bool           # True if linked to an existing Master Event
     impact_score: int             # 1–100, set by Priority Logic Agent
     severity_color: str           # Hex: #FFFF00 (Yellow), #FFA500 (Orange), #FF0000 (Red)
+    reasoning: str                # One-line reasoning from Priority Agent
     matched_officer: dict | None  # Dispatched officer details
 
 # ---------------------------------------------------------------------------
@@ -233,8 +234,7 @@ Return ONLY the JSON object."""
 
 
 def _parse_priority_json(text: str) -> dict | None:
-    """Extract impact_score and severity_color from LLM text response."""
-    # Try to find JSON in the response
+    """Extract impact_score, severity_color, and reasoning from LLM text response."""
     json_match = re.search(r"\{[^}]+\}", text, re.DOTALL)
     if not json_match:
         return None
@@ -242,8 +242,9 @@ def _parse_priority_json(text: str) -> dict | None:
         data = json.loads(json_match.group())
         score = int(data.get("impact_score", 0))
         color = data.get("severity_color", "")
+        reasoning = data.get("reasoning", "")
         if 1 <= score <= 100 and color.startswith("#"):
-            return {"impact_score": score, "severity_color": color}
+            return {"impact_score": score, "severity_color": color, "reasoning": reasoning}
     except (json.JSONDecodeError, ValueError, TypeError):
         pass
     return None
@@ -298,8 +299,11 @@ def _mock_priority_score(state: PulseState) -> dict:
     """Heuristic fallback when no LLM API key is available."""
     desc = state["translated_description"].lower()
     # Simple keyword-based scoring for testing
-    critical_keywords = ["fire", "collapse", "flood", "electrocution", "live wire", "gas leak"]
-    high_keywords = ["pothole", "water", "sewage", "accident", "broken", "overflow"]
+    critical_keywords = ["fire", "collapse", "flood", "electrocution", "live wire",
+                         "gas leak", "voltage", "sparking", "explosion", "drowning",
+                         "earthquake", "live", "wire fallen", "rupture", "evacuation"]
+    high_keywords = ["pothole", "water", "sewage", "accident", "broken", "overflow",
+                     "burst", "leaking", "damaged", "blocked", "malfunction"]
 
     score = 35  # default medium-low
     if any(kw in desc for kw in critical_keywords):
@@ -317,7 +321,7 @@ def _mock_priority_score(state: PulseState) -> dict:
         color = "#FFFF00"
 
     logger.info(f"[Priority] Mock score: {score} | Color: {color}")
-    return {"impact_score": score, "severity_color": color}
+    return {"impact_score": score, "severity_color": color, "reasoning": f"Keyword-matched: {state['domain']} domain issue"}
 
 # ---------------------------------------------------------------------------
 # Node 3: Dispatch Agent (Spatial Matching)

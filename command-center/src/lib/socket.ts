@@ -37,7 +37,7 @@ function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
     severity_color: severityColor,
     severity: colorToSeverity(severityColor),
     domain: ((pe.category as string) || "Municipal") as PulseEvent["domain"],
-    summary: (pe.category as string) || "New grievance event",
+    summary: (pe.summary as string) || (pe.category as string) || "New grievance event",
     assigned_officer: off ? {
       officer_id: (off.officer_id as string) || "OP-000",
       current_lat: off.current_lat as number,
