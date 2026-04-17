@@ -113,38 +113,46 @@ export default function DashboardPage() {
 
       {/* Center: Map + Stats — desktop */}
       <div className="hidden lg:flex flex-[2] flex-col min-w-0 min-h-0 h-full overflow-hidden">
-        {/* Stats bar — scrollable if it overflows */}
-        <div className="flex items-center gap-4 px-4 py-2.5 border-b shrink-0 glass overflow-x-auto no-scrollbar"
+        {/* Stats bar */}
+        <div className="flex items-center gap-4 px-4 py-2.5 border-b shrink-0 glass"
           style={{ borderColor: "rgba(0,0,0,0.06)" }}>
-          <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
-          <StatPill label="Critical" value={stats.critical} color="var(--accent-crimson)" />
-          <StatPill label="Resolved" value={stats.resolved} color="var(--accent-green)" />
-          <StatPill label="Avg Resp" value={stats.avgTime} color="var(--fg-secondary)" />
-          <button
-            onClick={handleTrigger}
-            disabled={triggering}
-            className="ml-auto px-4 py-2 rounded-md text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03] shrink-0"
-            style={{
-              background: triggering ? "var(--bg-elevated)" : "var(--accent-blue)",
-              color: triggering ? "var(--fg-muted)" : "#fff",
-              boxShadow: triggering ? "none" : "0 0 15px rgba(37,99,235,0.35)",
-            }}
-          >
-            {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
-          </button>
-          {triggerMsg && (
-            <span className="text-xs font-mono px-2.5 py-1 rounded animate-pulse shrink-0"
-              style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>
-              {triggerMsg}
+          {/* Stats group — always visible */}
+          <div className="flex items-center gap-5 shrink-0">
+            <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
+            <StatPill label="Critical" value={stats.critical} color="var(--accent-crimson)" />
+            <StatPill label="Resolved" value={stats.resolved} color="var(--accent-green)" />
+            <StatPill label="Avg Resp" value={stats.avgTime} color="var(--fg-secondary)" />
+          </div>
+          {/* Spacer */}
+          <div className="flex-1 min-w-0" />
+          {/* Actions group */}
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={handleTrigger}
+              disabled={triggering}
+              className="px-4 py-2 rounded-md text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
+              style={{
+                background: triggering ? "var(--bg-elevated)" : "var(--accent-blue)",
+                color: triggering ? "var(--fg-muted)" : "#fff",
+                boxShadow: triggering ? "none" : "0 0 15px rgba(37,99,235,0.35)",
+              }}
+            >
+              {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
+            </button>
+            {triggerMsg && (
+              <span className="text-xs font-mono px-2.5 py-1 rounded animate-pulse"
+                style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>
+                {triggerMsg}
+              </span>
+            )}
+            <span className="text-xs font-mono px-2 py-1 rounded"
+              style={{
+                background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "rgba(220,38,38,0.1)" : "var(--accent-amber-dim)",
+                color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "#dc2626" : "var(--accent-amber)",
+              }}>
+              {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : status === "disconnected" ? "✕ OFFLINE" : "↻ RECONNECTING"}
             </span>
-          )}
-          <span className="text-xs font-mono px-2 py-1 rounded shrink-0"
-            style={{
-              background: status === "connected" ? "var(--accent-green-dim)" : status === "disconnected" ? "rgba(220,38,38,0.1)" : "var(--accent-amber-dim)",
-              color: status === "connected" ? "var(--accent-green)" : status === "disconnected" ? "#dc2626" : "var(--accent-amber)",
-            }}>
-            {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : status === "disconnected" ? "✕ OFFLINE" : "↻ RECONNECTING"}
-          </span>
+          </div>
         </div>
         {/* Smart Filter Bar */}
         <div className="shrink-0 border-b glass" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
