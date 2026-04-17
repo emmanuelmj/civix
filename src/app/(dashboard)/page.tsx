@@ -14,10 +14,10 @@ export default function DashboardPage() {
   const [logs, setLogs] = useState<SwarmLogEntry[]>([]);
   const [intake, setIntake] = useState<IntakeFeedItem[]>([]);
   const [stats, setStats] = useState({ active: 0, critical: 0, resolved: 0, avgTime: "—" });
+  const [mobileTab, setMobileTab] = useState<"map" | "intake" | "swarm">("map");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Seed a few events
     const seed = Array.from({ length: 6 }, () => generatePulseEvent());
     const seedLogs = seed.flatMap(e => [generateSwarmLog(e), generateSwarmLog(e)]);
     const seedIntake = Array.from({ length: 4 }, () => generateIntakeItem());
@@ -25,24 +25,19 @@ export default function DashboardPage() {
     setLogs(seedLogs);
     setIntake(seedIntake);
 
-    // Simulate live stream
     intervalRef.current = setInterval(() => {
       const roll = Math.random();
 
       if (roll < 0.4) {
-        // New pulse event
         const evt = generatePulseEvent();
         setEvents(prev => [evt, ...prev].slice(0, MAX_ITEMS));
         setLogs(prev => [generateSwarmLog(evt), ...prev].slice(0, MAX_ITEMS));
       } else if (roll < 0.7) {
-        // New intake
         setIntake(prev => [generateIntakeItem(), ...prev].slice(0, MAX_ITEMS));
       } else {
-        // Swarm chatter
         setLogs(prev => [generateSwarmLog(), ...prev].slice(0, MAX_ITEMS));
       }
 
-      // Resolve a random event sometimes
       if (Math.random() < 0.1) {
         setEvents(prev => {
           const copy = [...prev];
@@ -65,7 +60,6 @@ export default function DashboardPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
 
-  // Compute stats
   useEffect(() => {
     const active = events.filter(e => e.status !== "RESOLVED").length;
     const critical = events.filter(e => e.severity === "critical" && e.status !== "RESOLVED").length;
@@ -73,17 +67,42 @@ export default function DashboardPage() {
     setStats({ active, critical, resolved, avgTime: active > 0 ? "~12m" : "—" });
   }, [events]);
 
+  const activeEvents = events.filter(e => e.status !== "RESOLVED");
+
   return (
-    <div className="flex h-full">
-      {/* Left: Ingestion Feed */}
-      <div className="w-72 shrink-0 border-r flex flex-col"
+    <div className="flex flex-col lg:flex-row h-full">
+      {/* Mobile tab bar */}
+      <div className="flex lg:hidden border-b shrink-0"
+        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+        {(["map", "intake", "swarm"] as const).map(tab => (
+          <button key={tab} onClick={() => setMobileTab(tab)}
+            className="flex-1 py-2.5 text-[11px] font-mono uppercase tracking-wider text-center transition-colors border-b-2"
+            style={{
+              borderColor: mobileTab === tab ? "var(--accent-blue)" : "transparent",
+              color: mobileTab === tab ? "var(--accent-blue)" : "var(--fg-muted)",
+              background: mobileTab === tab ? "var(--accent-blue-dim)" : "transparent",
+            }}>
+            {tab === "map" ? `Grid (${stats.active})` : tab === "intake" ? `Intake (${intake.length})` : `Swarm (${logs.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Mobile stats bar */}
+      <div className="flex lg:hidden items-center gap-3 px-3 py-1.5 border-b overflow-x-auto shrink-0"
+        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+        <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
+        <StatPill label="Crit" value={stats.critical} color="var(--accent-crimson)" />
+        <StatPill label="Done" value={stats.resolved} color="var(--accent-green)" />
+      </div>
+
+      {/* Left: Ingestion Feed — desktop only */}
+      <div className="hidden lg:flex w-72 shrink-0 border-r flex-col"
         style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <IngestionFeed items={intake} />
       </div>
 
-      {/* Center: Map + Stats */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Stats bar */}
+      {/* Center: Map + Stats — desktop */}
+      <div className="hidden lg:flex flex-1 flex-col min-w-0">
         <div className="flex items-center gap-6 px-4 py-2 border-b"
           style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
           <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
@@ -102,17 +121,34 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
-
-        {/* Map */}
         <div className="flex-1 p-2">
-          <MapLayer events={events.filter(e => e.status !== "RESOLVED")} />
+          <MapLayer events={activeEvents} />
         </div>
       </div>
 
-      {/* Right: Swarm Log */}
-      <div className="w-72 shrink-0 border-l flex flex-col"
+      {/* Right: Swarm Log — desktop only */}
+      <div className="hidden lg:flex w-72 shrink-0 border-l flex-col"
         style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
         <SwarmLog entries={logs} />
+      </div>
+
+      {/* Mobile content — full height, one panel at a time */}
+      <div className="flex-1 lg:hidden overflow-hidden">
+        {mobileTab === "map" && (
+          <div className="h-full p-2">
+            <MapLayer events={activeEvents} />
+          </div>
+        )}
+        {mobileTab === "intake" && (
+          <div className="h-full" style={{ background: "var(--bg-card)" }}>
+            <IngestionFeed items={intake} />
+          </div>
+        )}
+        {mobileTab === "swarm" && (
+          <div className="h-full" style={{ background: "var(--bg-card)" }}>
+            <SwarmLog entries={logs} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -120,7 +156,7 @@ export default function DashboardPage() {
 
 function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 shrink-0">
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
       <span className="text-[10px] font-mono uppercase" style={{ color: "var(--fg-muted)" }}>{label}</span>
       <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>

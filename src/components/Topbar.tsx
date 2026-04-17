@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export function Topbar() {
+export function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const [time, setTime] = useState("");
 
   useEffect(() => {
@@ -18,6 +18,16 @@ export function Topbar() {
       style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}
     >
       <div className="flex items-center gap-3">
+        {/* Mobile menu button */}
+        <button
+          onClick={onMenuToggle}
+          className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md"
+          style={{ color: "var(--fg-secondary)" }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
         <h1 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--fg-secondary)" }}>
           Command Center
         </h1>
@@ -34,15 +44,15 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-3 text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
+        <div className="hidden sm:flex items-center gap-3 text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
           <span>Hyderabad</span>
           <span style={{ color: "var(--fg-secondary)" }}>{time}</span>
         </div>
 
-        <div className="w-px h-4" style={{ background: "var(--border)" }} />
+        <div className="hidden sm:block w-px h-4" style={{ background: "var(--border)" }} />
 
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
+          <span className="hidden sm:inline text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
             4 agents
           </span>
           <span className="flex gap-0.5">
