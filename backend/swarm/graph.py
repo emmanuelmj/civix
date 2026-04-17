@@ -6,17 +6,19 @@ Three-node sequential graph:
   2. Priority Logic    → LLM-based impact scoring (City Planner persona)
   3. Dispatch Agent    → geospatial officer matching
 
-All LLM calls go to cloud APIs. No local model loading.
+All LLM calls go to cloud APIs (OpenRouter). No local model loading.
 LangSmith tracing is configured via environment variables.
 """
 
+import json
 import logging
 import os
 import random
+import re
 from typing import TypedDict
 
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
@@ -30,6 +32,11 @@ os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
 os.environ.setdefault("LANGCHAIN_PROJECT", "civix-pulse")
 
 logger = logging.getLogger("civix-pulse.swarm")
+
+# Default free model on OpenRouter (configurable via env)
+OPENROUTER_MODEL = os.environ.get(
+    "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"
+)
 
 # ---------------------------------------------------------------------------
 # State Schema
@@ -97,13 +104,22 @@ async def systemic_auditor_node(state: PulseState) -> dict:
 # Node 2: Priority Logic Agent (Impact Matrix via LLM)
 # ---------------------------------------------------------------------------
 
-# Initialize LLM with structured output
-_llm = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
-    temperature=0,
-    max_tokens=512,
-)
-_priority_llm = _llm.with_structured_output(PriorityOutput)
+def _build_priority_llm() -> ChatOpenAI | None:
+    """Builds the OpenRouter-backed LLM. Returns None if no API key."""
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key or api_key == "sk-or-...":
+        return None
+    return ChatOpenAI(
+        model=OPENROUTER_MODEL,
+        temperature=0,
+        max_tokens=512,
+        openai_api_key=api_key,
+        openai_api_base="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://github.com/emmanuelmj/civix",
+            "X-Title": "Civix-Pulse",
+        },
+    )
 
 PRIORITY_SYSTEM_PROMPT = """You are a senior City Planner and public safety expert working for an Indian municipal corporation.
 
@@ -126,29 +142,46 @@ SEVERITY COLOR MAPPING:
 - #FFA500 (Orange) → score 40-69  (High / Needs Attention)
 - #FFFF00 (Yellow) → score 1-39   (Low / Routine)
 
-Evaluate the following grievance and return your assessment."""
+You MUST respond with ONLY a valid JSON object, no extra text. Format:
+{"impact_score": <int 1-100>, "severity_color": "<hex>", "reasoning": "<one sentence>"}"""
 
 PRIORITY_USER_TEMPLATE = """GRIEVANCE DETAILS:
 - Description: {description}
 - Domain: {domain}
 - Location: ({lat}, {lng})
 
-Provide your impact_score, severity_color, and reasoning."""
+Respond with ONLY the JSON object."""
+
+
+def _parse_priority_json(text: str) -> dict | None:
+    """Extract impact_score and severity_color from LLM text response."""
+    # Try to find JSON in the response
+    json_match = re.search(r"\{[^}]+\}", text, re.DOTALL)
+    if not json_match:
+        return None
+    try:
+        data = json.loads(json_match.group())
+        score = int(data.get("impact_score", 0))
+        color = data.get("severity_color", "")
+        if 1 <= score <= 100 and color.startswith("#"):
+            return {"impact_score": score, "severity_color": color}
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+    return None
 
 
 async def priority_logic_node(state: PulseState) -> dict:
     """
-    Uses an LLM (Claude Sonnet) as a City Planner to evaluate the grievance
+    Uses an LLM (via OpenRouter) as a City Planner to evaluate the grievance
     and assign an impact_score (1-100) and severity_color (hex).
 
     Falls back to a heuristic mock if no API key is configured.
     """
     logger.info(f"[Priority] Scoring event: {state['event_id']}")
 
-    # Check if Anthropic API key is available
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key or api_key.startswith("sk-ant-..."):
-        logger.warning("[Priority] No valid ANTHROPIC_API_KEY — using mock scorer.")
+    llm = _build_priority_llm()
+    if llm is None:
+        logger.warning("[Priority] No valid OPENROUTER_API_KEY — using mock scorer.")
         return _mock_priority_score(state)
 
     user_message = PRIORITY_USER_TEMPLATE.format(
@@ -164,16 +197,19 @@ async def priority_logic_node(state: PulseState) -> dict:
     ]
 
     try:
-        result: PriorityOutput = await _priority_llm.ainvoke(messages)
-        logger.info(
-            f"[Priority] Score: {result.impact_score} | "
-            f"Color: {result.severity_color} | "
-            f"Reason: {result.reasoning}"
-        )
-        return {
-            "impact_score": result.impact_score,
-            "severity_color": result.severity_color,
-        }
+        response = await llm.ainvoke(messages)
+        parsed = _parse_priority_json(response.content)
+
+        if parsed:
+            logger.info(
+                f"[Priority] Score: {parsed['impact_score']} | "
+                f"Color: {parsed['severity_color']}"
+            )
+            return parsed
+        else:
+            logger.warning(f"[Priority] Could not parse LLM response: {response.content[:200]}")
+            return _mock_priority_score(state)
+
     except Exception as e:
         logger.error(f"[Priority] LLM call failed: {e}. Using mock scorer.")
         return _mock_priority_score(state)

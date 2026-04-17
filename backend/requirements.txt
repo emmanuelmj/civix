@@ -9,7 +9,7 @@ python-dotenv==1.1.0
 
 # LangChain + LangGraph (agent orchestration)
 langchain==0.3.25
-langchain-anthropic==0.3.15
+langchain-openai==0.3.12
 langgraph==0.4.1
 
 # LangSmith (tracing & observability)
