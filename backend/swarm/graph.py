@@ -7,7 +7,7 @@ Four-node sequential graph with cluster amplification:
   3. Cluster Amplifier → boosts score when cluster pattern detected
   4. Dispatch Agent    → domain-aware officer matching with proximity
 
-All LLM calls go to cloud APIs (OpenRouter). No local model loading.
+All LLM calls go to GitHub Models API (GPT-4.1) with OpenRouter fallback. No local model loading.
 LangSmith tracing is configured via environment variables.
 """
 
@@ -37,6 +37,7 @@ logger = logging.getLogger("civix-pulse.swarm")
 OPENROUTER_MODEL = os.environ.get(
     "OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"
 )
+GITHUB_MODELS_MODEL = os.environ.get("GITHUB_MODELS_MODEL", "openai/gpt-4.1")
 
 CLUSTER_SIMILARITY_THRESHOLD = float(
     os.environ.get("CLUSTER_THRESHOLD", "0.85")
@@ -203,21 +204,40 @@ def _mock_cluster_check(state: PulseState) -> dict:
 # ---------------------------------------------------------------------------
 
 def _build_priority_llm() -> ChatOpenAI | None:
-    """Builds the OpenRouter-backed LLM. Returns None if no API key."""
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key or api_key == "sk-or-...":
-        return None
-    return ChatOpenAI(
-        model=OPENROUTER_MODEL,
-        temperature=0,
-        max_tokens=512,
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
-        default_headers={
-            "HTTP-Referer": "https://github.com/emmanuelmj/civix",
-            "X-Title": "Civix-Pulse",
-        },
+    """Builds the LLM client. Tries GitHub Models first, falls back to OpenRouter."""
+    # Primary: GitHub Models API (OpenAI-compatible)
+    gh_key = os.environ.get("GITHUB_MODELS_API_KEY", "")
+    gh_base = os.environ.get(
+        "GITHUB_MODELS_BASE_URL",
+        "https://models.github.ai/orgs/imperialorg/inference",
     )
+    if gh_key and not gh_key.startswith("ghp_placeholder"):
+        logger.info("[LLM] Using GitHub Models API (GPT-4.1)")
+        return ChatOpenAI(
+            model=GITHUB_MODELS_MODEL,
+            temperature=0,
+            max_tokens=512,
+            openai_api_key=gh_key,
+            openai_api_base=gh_base,
+        )
+
+    # Fallback: OpenRouter
+    or_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if or_key and or_key != "sk-or-...":
+        logger.info("[LLM] Using OpenRouter fallback")
+        return ChatOpenAI(
+            model=OPENROUTER_MODEL,
+            temperature=0,
+            max_tokens=512,
+            openai_api_key=or_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/emmanuelmj/civix",
+                "X-Title": "Civix-Pulse",
+            },
+        )
+
+    return None
 
 PRIORITY_SYSTEM_PROMPT = """You are a municipal grievance scoring API. You receive a citizen complaint and return a JSON score.
 
@@ -270,14 +290,14 @@ def _parse_priority_json(text: str) -> dict | None:
 
 async def priority_logic_node(state: PulseState) -> dict:
     """
-    Uses LLM (OpenRouter) as a City Planner to evaluate the grievance.
+    Uses LLM (GitHub Models GPT-4.1 or OpenRouter) as a City Planner to evaluate the grievance.
     Now includes cluster context in the prompt for better scoring.
     """
     logger.info(f"[Priority] Scoring event: {state['event_id']}")
 
     llm = _build_priority_llm()
     if llm is None:
-        logger.warning("[Priority] No OPENROUTER_API_KEY — using keyword scorer.")
+        logger.warning("[Priority] No LLM API key configured — using keyword scorer.")
         return _mock_priority_score(state)
 
     user_message = PRIORITY_USER_TEMPLATE.format(
