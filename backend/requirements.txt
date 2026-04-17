@@ -14,3 +14,6 @@ langgraph==0.4.1
 
 # LangSmith (tracing & observability)
 langsmith==0.3.45
+
+# Pinecone (vector DB for cluster detection)
+pinecone==6.0.1

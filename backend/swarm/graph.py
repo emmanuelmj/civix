@@ -38,6 +38,11 @@ OPENROUTER_MODEL = os.environ.get(
     "OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"
 )
 
+# Pinecone config
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
+PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "civix-pulse-events")
+CLUSTER_SIMILARITY_THRESHOLD = 0.85
+
 # ---------------------------------------------------------------------------
 # State Schema
 # ---------------------------------------------------------------------------
@@ -70,35 +75,100 @@ class PriorityOutput(BaseModel):
     )
 
 # ---------------------------------------------------------------------------
-# Node 1: Systemic Auditor (Cluster Detection)
+# Node 1: Systemic Auditor (Cluster Detection via Pinecone)
 # ---------------------------------------------------------------------------
+
+def _get_pinecone_index():
+    """Initialize Pinecone client and return the index. Returns None if unconfigured."""
+    if not PINECONE_API_KEY or PINECONE_API_KEY == "...":
+        return None
+    try:
+        from pinecone import Pinecone
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        return pc.Index(PINECONE_INDEX_NAME)
+    except Exception as e:
+        logger.warning(f"[Auditor] Pinecone init failed: {e}")
+        return None
+
 
 async def systemic_auditor_node(state: PulseState) -> dict:
     """
     Checks if this event is part of a systemic cluster.
 
-    MOCK IMPLEMENTATION: Simulates a Pinecone similarity search.
-    In production, this queries Pinecone with the event's embedding vector,
-    filtering by geo-radius (2km) and time window (12h).
-    If cosine similarity > 0.85, links to an existing Master Event.
+    Flow:
+      1. Fetch the event's vector from Pinecone by event_id
+         (Dev 2's n8n workflow stores events with embeddings)
+      2. Query Pinecone for similar vectors within recent timeframe
+      3. If top similarity > 0.85, link to existing Master Event
+
+    Falls back to mock random score if Pinecone is not configured
+    or the event hasn't been indexed yet.
     """
     logger.info(f"[Auditor] Checking clusters for event: {state['event_id']}")
 
-    # Mock: random similarity score (replace with real Pinecone query)
-    similarity_score = random.uniform(0.0, 1.0)
+    index = _get_pinecone_index()
+    if index is None:
+        logger.warning("[Auditor] Pinecone not configured — using mock scorer.")
+        return _mock_cluster_check()
 
-    if similarity_score > 0.85:
-        logger.info(
-            f"[Auditor] CLUSTER DETECTED — similarity: {similarity_score:.2f}. "
-            f"Linking to existing Master Event."
+    try:
+        # Fetch this event's vector from Pinecone (stored by Dev 2's ingestion pipeline)
+        fetch_result = index.fetch(ids=[state["event_id"]])
+        vectors = fetch_result.get("vectors", {})
+
+        if state["event_id"] not in vectors:
+            logger.warning(
+                f"[Auditor] Event {state['event_id']} not found in Pinecone. "
+                f"Dev 2 may not have indexed it yet. Using mock."
+            )
+            return _mock_cluster_check()
+
+        event_vector = vectors[state["event_id"]]["values"]
+
+        # Query for similar events (potential cluster members)
+        query_result = index.query(
+            vector=event_vector,
+            top_k=5,
+            include_metadata=True,
+            filter={
+                "event_id": {"$ne": state["event_id"]},
+            },
         )
-        return {"cluster_found": True}
+
+        matches = query_result.get("matches", [])
+        if matches and matches[0]["score"] >= CLUSTER_SIMILARITY_THRESHOLD:
+            top_match = matches[0]
+            cluster_size = sum(
+                1 for m in matches if m["score"] >= CLUSTER_SIMILARITY_THRESHOLD
+            )
+            logger.info(
+                f"[Auditor] CLUSTER DETECTED — top similarity: {top_match['score']:.3f}, "
+                f"cluster size: {cluster_size}, "
+                f"master event: {top_match['id']}"
+            )
+            return {"cluster_found": True}
+        else:
+            top_score = matches[0]["score"] if matches else 0.0
+            logger.info(
+                f"[Auditor] No cluster found — top similarity: {top_score:.3f}. "
+                f"Proceeding as new event."
+            )
+            return {"cluster_found": False}
+
+    except Exception as e:
+        logger.error(f"[Auditor] Pinecone query failed: {e}. Using mock.")
+        return _mock_cluster_check()
+
+
+def _mock_cluster_check() -> dict:
+    """Mock fallback: random similarity score for testing."""
+    similarity_score = random.uniform(0.0, 1.0)
+    cluster_found = similarity_score > CLUSTER_SIMILARITY_THRESHOLD
+    if cluster_found:
+        logger.info(f"[Auditor] MOCK CLUSTER DETECTED — similarity: {similarity_score:.2f}")
     else:
-        logger.info(
-            f"[Auditor] No cluster found — similarity: {similarity_score:.2f}. "
-            f"Proceeding as new event."
-        )
-        return {"cluster_found": False}
+        logger.info(f"[Auditor] Mock: no cluster — similarity: {similarity_score:.2f}")
+    return {"cluster_found": cluster_found}
 
 # ---------------------------------------------------------------------------
 # Node 2: Priority Logic Agent (Impact Matrix via LLM)
