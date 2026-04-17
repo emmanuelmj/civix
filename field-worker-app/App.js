@@ -11,7 +11,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  SafeAreaView, StatusBar, Modal, ScrollView,
+  SafeAreaView, StatusBar, ScrollView,
   ActivityIndicator, Image, Platform,
 } from 'react-native';
 import { useCameraPermissions } from 'expo-camera';
@@ -186,14 +186,10 @@ export default function App() {
         return (
           <DashboardScreen
             dispatches={ROAD_DISPATCHES}
-            dutyModal={dutyModal}
-            menuVisible={menuVisible}
-            onGoOnDuty={goOnDuty}
             onAccept={acceptDispatch}
             onRecentIssues={() => setAppState(STATES.RECENT_ISSUES)}
             onGoOffDuty={() => setAppState(STATES.SPLASH)}
             onMenuOpen={() => setMenuVisible(true)}
-            onMenuClose={() => setMenuVisible(false)}
           />
         );
 
@@ -241,8 +237,65 @@ export default function App() {
 
   return (
     <PhoneFrame>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      {renderScreen()}
+      {/*
+       * root.container has position:'relative' + overflow:'hidden'.
+       * This creates a strict bounding box so that absolutely-positioned
+       * overlays (duty modal, hamburger drawer) are clipped inside the
+       * phone frame and never bleed out to the browser viewport.
+       */}
+      <View style={root.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        {renderScreen()}
+
+        {/* ── GO ON DUTY overlay — bounded inside phone frame ──────────── */}
+        {appState === STATES.DASHBOARD && dutyModal && (
+          <View style={root.modalOverlay}>
+            <View style={root.modalCard}>
+              <View style={root.mLogoRow}>
+                <Text style={root.mLogo}>CIVIX</Text>
+                <View style={root.mLogoDot} />
+              </View>
+              <Text style={root.mSub}>Field Operations Ready</Text>
+              <View style={root.mDivider} />
+              <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
+              <InfoRow label="ROLE"        value={OFFICER_ROLE} />
+              <InfoRow label="DEPARTMENT"  value="Field Operations" />
+              <TouchableOpacity style={root.dutyBtn} onPress={goOnDuty} activeOpacity={0.85}>
+                <Text style={root.dutyBtnText}>GO ON DUTY</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── HAMBURGER MENU DRAWER — slides in from left, stays inside frame */}
+        {appState === STATES.DASHBOARD && menuVisible && (
+          <>
+            {/* Dim overlay — tapping it closes the drawer */}
+            <TouchableOpacity
+              style={root.drawerOverlay}
+              onPress={() => setMenuVisible(false)}
+              activeOpacity={1}
+            />
+            {/* Drawer panel */}
+            <View style={root.drawerPanel}>
+              <View style={root.drawerHandle} />
+              <Text style={root.drawerTitle}>Officer Profile</Text>
+              <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
+              <InfoRow label="ROLE"        value={OFFICER_ROLE} />
+              <InfoRow label="DEPARTMENT"  value="Field Operations" />
+              <InfoRow label="SHIFT"       value="07:00 — 19:00" />
+              <InfoRow label="STATUS"      value="ON DUTY" valueColor={T.success} />
+              <TouchableOpacity
+                style={root.drawerCloseBtn}
+                onPress={() => setMenuVisible(false)}
+                activeOpacity={0.85}
+              >
+                <Text style={root.drawerCloseBtnText}>CLOSE</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
     </PhoneFrame>
   );
 }
@@ -327,49 +380,10 @@ const ir = StyleSheet.create({
 // SCREEN: DASHBOARD
 // ═════════════════════════════════════════════════════════════════════════════
 function DashboardScreen({
-  dispatches, dutyModal, menuVisible,
-  onGoOnDuty, onAccept, onRecentIssues, onGoOffDuty, onMenuOpen, onMenuClose,
+  dispatches, onAccept, onRecentIssues, onGoOffDuty, onMenuOpen,
 }) {
   return (
     <SafeAreaView style={dsh.root}>
-
-      {/* ── GO ON DUTY MODAL ──────────────────────────────────────────── */}
-      <Modal visible={dutyModal} transparent animationType="fade">
-        <View style={dsh.modalOverlay}>
-          <View style={dsh.modalCard}>
-            <View style={dsh.mLogoRow}>
-              <Text style={dsh.mLogo}>CIVIX</Text>
-              <View style={dsh.mLogoDot} />
-            </View>
-            <Text style={dsh.mSub}>Field Operations Ready</Text>
-            <View style={dsh.mDivider} />
-            <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
-            <InfoRow label="ROLE"        value={OFFICER_ROLE} />
-            <InfoRow label="DEPARTMENT"  value="Field Operations" />
-            <TouchableOpacity style={dsh.dutyBtn} onPress={onGoOnDuty} activeOpacity={0.85}>
-              <Text style={dsh.dutyBtnText}>GO ON DUTY</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── PROFILE / SETTINGS SLIDE-UP ───────────────────────────────── */}
-      <Modal visible={menuVisible} transparent animationType="slide">
-        <TouchableOpacity style={dsh.menuOverlay} onPress={onMenuClose} activeOpacity={1}>
-          <View style={dsh.menuPanel}>
-            <View style={dsh.menuHandle} />
-            <Text style={dsh.menuTitle}>Officer Profile</Text>
-            <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
-            <InfoRow label="ROLE"        value={OFFICER_ROLE} />
-            <InfoRow label="DEPARTMENT"  value="Field Operations" />
-            <InfoRow label="SHIFT"       value="07:00 — 19:00" />
-            <InfoRow label="STATUS"      value="ON DUTY" valueColor={T.success} />
-            <TouchableOpacity style={dsh.menuCloseBtn} onPress={onMenuClose} activeOpacity={0.85}>
-              <Text style={dsh.menuCloseBtnText}>CLOSE</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* ── TOP NAVIGATION BAR ────────────────────────────────────────── */}
       <View style={dsh.header}>
@@ -444,23 +458,6 @@ function DispatchCard({ d, onAccept }) {
 
 const dsh = StyleSheet.create({
   root:         { flex: 1, backgroundColor: T.bg },
-  // Modal overlay
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  modalCard:    { width: '100%', backgroundColor: T.card, borderRadius: T.radius, padding: 28, ...T.shadowLG },
-  mLogoRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  mLogo:        { fontSize: 28, fontWeight: '900', color: T.text, letterSpacing: 5 },
-  mLogoDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: T.accent, marginLeft: 4, marginTop: 4 },
-  mSub:         { fontSize: T.fontXS, fontWeight: '600', color: T.textSecondary, letterSpacing: 2.5, marginBottom: 20 },
-  mDivider:     { height: 1, backgroundColor: T.border, marginBottom: 8 },
-  dutyBtn:      { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', marginTop: 24, ...T.shadow },
-  dutyBtnText:  { color: T.white, fontWeight: '800', fontSize: 16, letterSpacing: 2.5 },
-  // Menu slide-up
-  menuOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  menuPanel:    { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
-  menuHandle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 20 },
-  menuTitle:    { fontSize: T.fontLG, fontWeight: '800', color: T.text, marginBottom: 16 },
-  menuCloseBtn: { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
-  menuCloseBtnText: { fontWeight: '700', fontSize: T.fontSM, color: T.text },
   // Header
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F3F4' },
   ham:          { gap: 4, paddingVertical: 2 },
@@ -768,4 +765,33 @@ const vs = StyleSheet.create({
   successCardText:     { fontSize: 13, color: '#065F46', lineHeight: 20 },
   returnBtn:           { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center', width: '100%', ...T.shadow },
   returnBtnText:       { fontSize: 15, fontWeight: '800', color: T.white, letterSpacing: 2 },
+});
+
+// ─── ROOT CONTAINER + OVERLAY STYLES ─────────────────────────────────────────
+// These styles lock the duty modal and hamburger drawer inside the phone frame.
+// position:'relative' + overflow:'hidden' on the container creates a strict
+// bounding box; all absolute children are clipped to it.
+const root = StyleSheet.create({
+  container:          { flex: 1, position: 'relative', overflow: 'hidden' },
+
+  // ── Duty modal overlay ──────────────────────────────────────────────────
+  modalOverlay:       { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 200 },
+  modalCard:          { width: '100%', backgroundColor: T.card, borderRadius: T.radius, padding: 28, ...T.shadowLG },
+  mLogoRow:           { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  mLogo:              { fontSize: 28, fontWeight: '900', color: T.text, letterSpacing: 5 },
+  mLogoDot:           { width: 8, height: 8, borderRadius: 4, backgroundColor: T.accent, marginLeft: 4, marginTop: 4 },
+  mSub:               { fontSize: T.fontXS, fontWeight: '600', color: T.textSecondary, letterSpacing: 2.5, marginBottom: 20 },
+  mDivider:           { height: 1, backgroundColor: T.border, marginBottom: 8 },
+  dutyBtn:            { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', marginTop: 24, ...T.shadow },
+  dutyBtnText:        { color: T.white, fontWeight: '800', fontSize: 16, letterSpacing: 2.5 },
+
+  // ── Hamburger drawer ────────────────────────────────────────────────────
+  // Semi-transparent overlay behind the drawer — tap to dismiss
+  drawerOverlay:      { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 100 },
+  // Drawer panel slides in from the left; right-side shadow separates it
+  drawerPanel:        { position: 'absolute', top: 0, bottom: 0, left: 0, width: '75%', backgroundColor: T.card, zIndex: 101, padding: 24, paddingTop: 52, shadowColor: '#000', shadowOffset: { width: 6, height: 0 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 20 },
+  drawerHandle:       { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 24 },
+  drawerTitle:        { fontSize: T.fontLG, fontWeight: '800', color: T.text, marginBottom: 16 },
+  drawerCloseBtn:     { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
+  drawerCloseBtnText: { fontWeight: '700', fontSize: T.fontSM, color: T.text },
 });
