@@ -1,12 +1,27 @@
-export function Sidebar() {
-  const navItems = [
-    { label: "Live Grid", icon: "◫", active: true },
-    { label: "Intake Feed", icon: "◉" },
-    { label: "Swarm Log", icon: "⧉" },
-    { label: "Analytics", icon: "◔" },
-    { label: "Officers", icon: "⊕" },
-    { label: "Settings", icon: "⚙" },
-  ];
+"use client";
+
+import { useDashboard, type TabId } from "@/lib/dashboard-context";
+
+interface SidebarProps {
+  onNavigate?: () => void;
+}
+
+const navItems: { label: TabId; icon: string }[] = [
+  { label: "Live Grid", icon: "◫" },
+  { label: "Intake Feed", icon: "◉" },
+  { label: "Swarm Log", icon: "⧉" },
+  { label: "Analytics", icon: "◔" },
+  { label: "Officers", icon: "⊕" },
+  { label: "Settings", icon: "⚙" },
+];
+
+export function Sidebar({ onNavigate }: SidebarProps) {
+  const { activeTab, setActiveTab } = useDashboard();
+
+  const handleClick = (tab: TabId) => {
+    setActiveTab(tab);
+    onNavigate?.(); // close mobile sidebar
+  };
 
   return (
     <aside
@@ -33,22 +48,26 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
-        {navItems.map((item) => (
-          <button
-            key={item.label}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-all"
-            style={{
-              background: item.active ? "var(--accent-blue-dim)" : "transparent",
-              color: item.active ? "var(--accent-blue)" : "var(--fg-secondary)",
-            }}
-          >
-            <span className="text-sm opacity-70">{item.icon}</span>
-            {item.label}
-            {item.active && (
-              <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent-blue)" }} />
-            )}
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const isActive = activeTab === item.label;
+          return (
+            <button
+              key={item.label}
+              onClick={() => handleClick(item.label)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-all"
+              style={{
+                background: isActive ? "var(--accent-blue-dim)" : "transparent",
+                color: isActive ? "var(--accent-blue)" : "var(--fg-secondary)",
+              }}
+            >
+              <span className="text-sm opacity-70">{item.icon}</span>
+              {item.label}
+              {isActive && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent-blue)" }} />
+              )}
+            </button>
+          );
+        })}
       </nav>
 
       {/* System status */}
