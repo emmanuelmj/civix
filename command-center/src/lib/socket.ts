@@ -276,10 +276,6 @@ export function usePulseStream(): UsePulseStreamReturn {
       reconnectAttemptRef.current = 0;
       stopMock();
       setStatus("connected");
-      // Clear old data when switching from mock to live
-      setEvents([]);
-      setLogs([]);
-      setIntake([]);
     };
 
     ws.onmessage = (event) => {
@@ -363,30 +359,17 @@ const QUICK_COMPLAINTS = [
 ];
 
 export async function triggerAnalysis(): Promise<{ ok: boolean; message: string }> {
-  const complaint = QUICK_COMPLAINTS[Math.floor(Math.random() * QUICK_COMPLAINTS.length)];
-  const eventId = `evt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const body = {
-    event_id: eventId,
-    translated_description: complaint.desc,
-    domain: complaint.domain,
-    coordinates: {
-      lat: 17.385 + (Math.random() - 0.5) * 0.1,
-      lng: 78.4867 + (Math.random() - 0.5) * 0.1,
-    },
-  };
-
   try {
-    const res = await fetch(`${API_URL}/api/v1/trigger-analysis`, {
+    // Fire a burst of 25 pre-scored events for instant dense population
+    const res = await fetch(`${API_URL}/api/v1/demo-burst?count=25`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
     });
     if (!res.ok) {
       return { ok: false, message: `Backend returned ${res.status}` };
     }
     const data = await res.json();
-    const score = data?.data?.pulse_event?.impact_score ?? "?";
-    return { ok: true, message: `Score: ${score} — ${complaint.desc.slice(0, 50)}` };
+    return { ok: true, message: `${data.events_fired} events fired via LangGraph swarm` };
   } catch {
     return { ok: false, message: "Backend unreachable. Using mock mode." };
   }
