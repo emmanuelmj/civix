@@ -17,7 +17,7 @@ import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus } from "
 import { useDashboard } from "@/lib/dashboard-context";
 
 export default function DashboardPage() {
-  const { events, logs, intake, status } = usePulseStream();
+  const { events, logs, intake, officers, status } = usePulseStream();
   const { activeTab } = useDashboard();
   const [stats, setStats] = useState({ active: 0, critical: 0, resolved: 0, avgTime: "—" });
   const [mobileTab, setMobileTab] = useState<"map" | "intake" | "swarm">("map");
@@ -71,7 +71,7 @@ export default function DashboardPage() {
   }
 
   if (activeTab === "Officers") {
-    return <OfficersView events={events} />;
+    return <OfficersView events={events} officers={officers} />;
   }
 
   if (activeTab === "Settings") {

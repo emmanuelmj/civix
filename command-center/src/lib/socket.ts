@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus } from "./types";
+import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus, Officer } from "./types";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws/dashboard";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -121,6 +121,7 @@ interface UsePulseStreamReturn {
   events: PulseEvent[];
   logs: SwarmLogEntry[];
   intake: IntakeFeedItem[];
+  officers: Officer[];
   status: ConnectionStatus;
 }
 
@@ -130,7 +131,9 @@ export function usePulseStream(): UsePulseStreamReturn {
   const [events, setEvents] = useState<PulseEvent[]>([]);
   const [logs, setLogs] = useState<SwarmLogEntry[]>([]);
   const [intake, setIntake] = useState<IntakeFeedItem[]>([]);
+  const [officers, setOfficers] = useState<Officer[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const bootstrapDone = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -273,6 +276,32 @@ export function usePulseStream(): UsePulseStreamReturn {
     mountedRef.current = true;
     connect();
 
+    // Load existing data from PostgreSQL on mount
+    if (!bootstrapDone.current) {
+      bootstrapDone.current = true;
+      fetchExistingEvents().then(({ events: dbEvents, intake: dbIntake }) => {
+        if (!mountedRef.current) return;
+        if (dbEvents.length > 0) {
+          setEvents((prev) => {
+            const existingIds = new Set(prev.map((e) => e.event_id));
+            const newOnes = dbEvents.filter((e) => !existingIds.has(e.event_id));
+            return [...prev, ...newOnes].slice(0, MAX_ITEMS);
+          });
+        }
+        if (dbIntake.length > 0) {
+          setIntake((prev) => {
+            const existingIds = new Set(prev.map((i) => i.id));
+            const newOnes = dbIntake.filter((i) => !existingIds.has(i.id));
+            return [...prev, ...newOnes].slice(0, MAX_ITEMS);
+          });
+        }
+      });
+      fetchOfficersFromDb().then((dbOfficers) => {
+        if (!mountedRef.current) return;
+        if (dbOfficers.length > 0) setOfficers(dbOfficers);
+      });
+    }
+
     return () => {
       mountedRef.current = false;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -284,7 +313,101 @@ export function usePulseStream(): UsePulseStreamReturn {
     };
   }, [connect]);
 
-  return { events, logs, intake, status };
+  return { events, logs, intake, officers, status };
+}
+
+// ── REST API — load existing data from PostgreSQL ──────────────────
+
+function mapDbEventToPulseEvent(dbEvent: Record<string, unknown>): PulseEvent {
+  const severityColor = (dbEvent.severity_color as string) || "#FFA500";
+  return {
+    event_id: (dbEvent.event_id as string) || crypto.randomUUID(),
+    status: (dbEvent.status as PulseEvent["status"]) || "NEW",
+    coordinates: {
+      lat: (dbEvent.latitude as number) || 17.385,
+      lng: (dbEvent.longitude as number) || 78.4867,
+    },
+    severity_color: severityColor,
+    severity: colorToSeverity(severityColor),
+    domain: ((dbEvent.domain as string) || "Municipal") as PulseEvent["domain"],
+    summary: (dbEvent.translated_description as string) || "Grievance event",
+    assigned_officer: dbEvent.assigned_officer_id
+      ? {
+          officer_id: dbEvent.assigned_officer_id as string,
+          name: undefined,
+          current_lat: 0,
+          current_lng: 0,
+        }
+      : undefined,
+    log_message: `Score: ${dbEvent.impact_score || 0}/100. ${dbEvent.cluster_found ? "Cluster detected." : "Isolated."} Status: ${dbEvent.status}`,
+    timestamp: dbEvent.created_at
+      ? new Date(dbEvent.created_at as string).getTime()
+      : Date.now(),
+    cluster_found: dbEvent.cluster_found as boolean | undefined,
+    citizen_name: dbEvent.citizen_name as string | undefined,
+    citizen_id: dbEvent.citizen_id as string | undefined,
+    issue_type: dbEvent.issue_type as string | undefined,
+    panic_flag: dbEvent.panic_flag as boolean | undefined,
+    sentiment_score: dbEvent.sentiment_score as number | undefined,
+    original_text: dbEvent.raw_input as string | undefined,
+  };
+}
+
+function mapDbEventToIntake(dbEvent: Record<string, unknown>): IntakeFeedItem {
+  return {
+    id: `intake-${dbEvent.event_id}`,
+    channel: ((dbEvent.source as string) || "portal") as IntakeFeedItem["channel"],
+    original_text: (dbEvent.raw_input as string) || (dbEvent.translated_description as string) || "",
+    translated_text: (dbEvent.translated_description as string) || "",
+    timestamp: dbEvent.created_at
+      ? new Date(dbEvent.created_at as string).getTime()
+      : Date.now(),
+    coordinates: {
+      lat: (dbEvent.latitude as number) || 17.385,
+      lng: (dbEvent.longitude as number) || 78.4867,
+    },
+    citizen_name: dbEvent.citizen_name as string | undefined,
+    citizen_id: dbEvent.citizen_id as string | undefined,
+    issue_type: dbEvent.issue_type as string | undefined,
+    panic_flag: dbEvent.panic_flag as boolean | undefined,
+    sentiment_score: dbEvent.sentiment_score as number | undefined,
+  };
+}
+
+async function fetchExistingEvents(): Promise<{
+  events: PulseEvent[];
+  intake: IntakeFeedItem[];
+}> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/events?limit=100`);
+    if (!res.ok) return { events: [], intake: [] };
+    const data = await res.json();
+    const dbEvents = (data.events || []) as Record<string, unknown>[];
+    return {
+      events: dbEvents.map(mapDbEventToPulseEvent),
+      intake: dbEvents.map(mapDbEventToIntake),
+    };
+  } catch {
+    return { events: [], intake: [] };
+  }
+}
+
+async function fetchOfficersFromDb(): Promise<Officer[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/officers`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return ((data.officers || []) as Record<string, unknown>[]).map((o) => ({
+      officer_id: o.officer_id as string,
+      name: o.name as string | undefined,
+      skills: o.domain_skills as string[] | undefined,
+      current_lat: (o.latitude as number) || 0,
+      current_lng: (o.longitude as number) || 0,
+      status: o.status as string | undefined,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // ── Trigger Analysis — fires real complaints through LangGraph swarm ────

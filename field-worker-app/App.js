@@ -20,7 +20,7 @@ import PhoneFrame from './components/PhoneFrame';
 import { healthCheck, updateOfficerLocation, verifyResolution } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const OFFICER_ID   = 'OP-441';
+const OFFICER_ID   = 'OP-101';
 const OFFICER_ROLE = 'Road Infrastructure';
 
 // ─── MOCK DATA (role-filtered — road worker only) ─────────────────────────────
@@ -708,7 +708,7 @@ function LoginScreen({ onLogin }) {
         <Text style={s.loginFieldLabel}>OFFICER ID</Text>
         <TextInput
           style={s.loginInput}
-          placeholder="e.g. OP-441"
+          placeholder="e.g. OP-101"
           placeholderTextColor="#9CA3AF"
           value={officerId}
           onChangeText={setOfficerId}

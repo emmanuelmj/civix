@@ -549,6 +549,23 @@ async def watcher_rescan() -> dict[str, str]:
     return {"status": "error", "message": "Watcher not running"}
 
 
+@app.post("/api/v1/watcher/bootstrap")
+async def watcher_bootstrap() -> dict[str, Any]:
+    """
+    Force-process ALL existing Pinecone vectors through the LangGraph pipeline.
+    Populates PostgreSQL from existing Pinecone data. Idempotent (upserts).
+    """
+    if not watcher:
+        return {"status": "error", "message": "Watcher not initialized"}
+
+    processed = await watcher.bootstrap()
+    return {
+        "status": "ok",
+        "processed": processed,
+        "message": f"Bootstrap complete: {processed} events processed into PostgreSQL",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Field Worker (Officer) Endpoints
 # ---------------------------------------------------------------------------

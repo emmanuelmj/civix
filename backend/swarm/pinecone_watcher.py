@@ -27,6 +27,7 @@ logger = logging.getLogger("civix-pulse.watcher")
 
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "civix-pulse")
+PINECONE_NAMESPACE = os.environ.get("PINECONE_NAMESPACE", "civix-events")
 POLL_INTERVAL = int(os.environ.get("PINECONE_POLL_INTERVAL", "10"))
 
 
@@ -309,10 +310,12 @@ class PineconeWatcher:
         pinecone_service: PineconeService,
         process_fn: Callable[[dict[str, Any]], Awaitable[None]],
         poll_interval: int = POLL_INTERVAL,
+        namespace: str = PINECONE_NAMESPACE,
     ) -> None:
         self.pc = pinecone_service
         self.process_fn = process_fn
         self.poll_interval = poll_interval
+        self.namespace = namespace
         self.processed_ids: set[str] = set()
         self._running = False
         self._task: asyncio.Task[None] | None = None
@@ -324,9 +327,10 @@ class PineconeWatcher:
             return
 
         # Seed with existing IDs so we don't reprocess old events
-        self.processed_ids = self.pc.list_all_ids()
+        self.processed_ids = self.pc.list_all_ids(namespace=self.namespace)
         logger.info(
-            f"[Watcher] Seeded with {len(self.processed_ids)} existing vectors. "
+            f"[Watcher] Seeded with {len(self.processed_ids)} existing vectors "
+            f"(namespace='{self.namespace}'). "
             f"Polling every {self.poll_interval}s for new events…"
         )
 
@@ -355,7 +359,7 @@ class PineconeWatcher:
 
     async def _poll(self) -> None:
         """Check for new vectors in Pinecone."""
-        current_ids = self.pc.list_all_ids()
+        current_ids = self.pc.list_all_ids(namespace=self.namespace)
         new_ids = current_ids - self.processed_ids
 
         if not new_ids:
@@ -365,7 +369,7 @@ class PineconeWatcher:
 
         # Fetch metadata for new vectors (batch max 100)
         batch = list(new_ids)[:100]
-        vectors = self.pc.fetch_vectors(batch)
+        vectors = self.pc.fetch_vectors(batch, namespace=self.namespace)
 
         for vid, vdata in vectors.items():
             try:
@@ -387,10 +391,49 @@ class PineconeWatcher:
         """Manually mark an event as processed (used by webhook)."""
         self.processed_ids.add(event_id)
 
+    async def bootstrap(self) -> int:
+        """
+        Force-process ALL existing vectors in Pinecone, ignoring processed_ids.
+        Used to backfill PostgreSQL from existing Pinecone data.
+        Returns the number of events processed.
+        """
+        all_ids = self.pc.list_all_ids(namespace=self.namespace)
+        if not all_ids:
+            logger.info("[Watcher] Bootstrap: no vectors found.")
+            return 0
+
+        logger.info(f"[Watcher] 🚀 Bootstrap: processing {len(all_ids)} vectors…")
+        processed = 0
+
+        # Process in batches of 50
+        id_list = list(all_ids)
+        for i in range(0, len(id_list), 50):
+            batch = id_list[i : i + 50]
+            vectors = self.pc.fetch_vectors(batch, namespace=self.namespace)
+
+            for vid, vdata in vectors.items():
+                try:
+                    meta = dict(vdata.metadata) if vdata.metadata else {}
+                    event_data = extract_metadata(vid, meta)
+                    event_data["_vector"] = (
+                        list(vdata.values) if vdata.values else None
+                    )
+                    await self.process_fn(event_data)
+                    self.processed_ids.add(vid)
+                    processed += 1
+                    logger.info(f"[Watcher] ✓ Bootstrap processed: {vid[:20]}…")
+                except Exception as e:
+                    logger.error(f"[Watcher] ✗ Bootstrap failed for {vid}: {e}")
+                    self.processed_ids.add(vid)
+
+        logger.info(f"[Watcher] 🚀 Bootstrap complete: {processed}/{len(all_ids)} events.")
+        return processed
+
     @property
     def status(self) -> dict[str, Any]:
         return {
             "running": self._running,
             "processed_count": len(self.processed_ids),
             "poll_interval_seconds": self.poll_interval,
+            "namespace": self.namespace,
         }

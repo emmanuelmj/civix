@@ -11,6 +11,7 @@ export interface Officer {
   current_lng: number;
   distance_km?: number;
   active_tasks?: number;
+  status?: string;
 }
 
 export interface PulseEvent {
