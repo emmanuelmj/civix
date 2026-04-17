@@ -1,600 +1,771 @@
 /**
  * App.js — Civix Field Worker
  * ============================
- * State machine:
- *   LOGIN → OFF_DUTY → SCENARIO_QUEUE → INCIDENT_LIST → EN_ROUTE → VERIFICATION
+ * 5-state linear demo flow:
+ *   SPLASH → DASHBOARD → RECENT_ISSUES → ACTIVE_TASK → VERIFICATION
  *
- * !! BACKEND CONFIG — update before deploying !!
- *   BACKEND_BASE_URL  →  your FastAPI backend URL
- *   OFFICER_ID        →  officer's unique identifier
- *
- * DEMO MODE: auto-enabled on web — all states work without a real device.
+ * All screens live in this file as inline sub-components.
+ * CameraScreen is kept separate for isolation.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Alert,
-  Vibration,
-  Platform,
+  View, Text, TouchableOpacity, StyleSheet,
+  SafeAreaView, StatusBar, Modal, ScrollView,
+  ActivityIndicator, Image, Platform,
 } from 'react-native';
-import * as Location from 'expo-location';
 import { useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
-import { io } from 'socket.io-client';
+import CameraScreen from './components/CameraScreen';
+import PhoneFrame   from './components/PhoneFrame';
 
-import LoginScreen         from './components/LoginScreen';
-import ScenarioQueueScreen from './components/ScenarioQueueScreen';
-import IncidentListScreen  from './components/IncidentListScreen';
-import EnRouteScreen       from './components/EnRouteScreen';
-import CameraScreen        from './components/CameraScreen';
-import PhoneFrame          from './components/PhoneFrame';
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+const OFFICER_ID   = 'OP-441';
+const OFFICER_ROLE = 'Road Infrastructure';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIG  !! REPLACE before deploying !!
-// ─────────────────────────────────────────────────────────────────────────────
-const BACKEND_BASE_URL = 'https://cautious-winner-j9g694vr76jcv57-8000.app.github.dev';
-const OFFICER_ID       = 'OP-441';
-const PING_INTERVAL_MS = 5000;
-const IS_DEMO          = Platform.OS === 'web';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-const vibrate = (pattern) => {
-  if (Platform.OS !== 'web') Vibration.vibrate(pattern);
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// App states
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── APP STATES ────────────────────────────────────────────────────────────
 const STATES = {
-  LOGIN:          'LOGIN',
-  OFF_DUTY:       'OFF_DUTY',
-  SCENARIO_QUEUE: 'SCENARIO_QUEUE',  // browsing category list (was AVAILABLE)
-  INCIDENT_LIST:  'INCIDENT_LIST',   // viewing incidents in a scenario
-  EN_ROUTE:       'EN_ROUTE',        // accepted an incident, navigating to it
-  VERIFICATION:   'VERIFICATION',    // at location, taking proof-of-work photo
+  SPLASH:        'SPLASH',
+  DASHBOARD:     'DASHBOARD',
+  RECENT_ISSUES: 'RECENT_ISSUES',
+  ACTIVE_TASK:   'ACTIVE_TASK',
+  VERIFICATION:  'VERIFICATION',
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mock scenario + incident data
-// ─────────────────────────────────────────────────────────────────────────────
-const SCENARIOS = [
+// ─── MOCK DATA — role-filtered for Road Worker (OP-441) ────────────────────
+const ROAD_DISPATCHES = [
   {
-    id: 'WATER',
-    icon: '💧',
-    color: '#3B82F6',
-    accentBg: '#EFF6FF',
-    domain: 'WATER',
-    depots: [
-      { name: 'Water Works Unit 7',  address: 'Mehdipatnam Depot', distance_km: 1.8 },
-      { name: 'HMWS&SB Station',     address: 'Tolichowki',        distance_km: 3.4 },
-    ],
-    incidents: [
-      {
-        event_id:      'demo-w1',
-        title:         'Main Supply Pipe Burst',
-        description:   'Main supply pipe burst on MG Road. Flooding 3 residential blocks. Approx 2,000 residents affected.',
-        priority:      'CRITICAL',
-        impact_score:  87,
-        severity_color:'Red',
-        coordinates:   { lat: 17.4560, lng: 78.3850 },
-        distance_km:   1.4,
-        reported_at:   '09:14',
-      },
-      {
-        event_id:      'demo-w2',
-        title:         'Low Water Pressure — Sector 12',
-        description:   'Multiple residents reporting zero water pressure in Sector 12, Banjara Hills. Possibly related to a pump failure upstream.',
-        priority:      'HIGH',
-        impact_score:  63,
-        severity_color:'Orange',
-        coordinates:   { lat: 17.4488, lng: 78.3920 },
-        distance_km:   2.9,
-        reported_at:   '10:32',
-      },
-      {
-        event_id:      'demo-w3',
-        title:         'Sewage Overflow — Street 14',
-        description:   'Sewage overflow on Street 14, Mehdipatnam. Contamination near food market area. Health hazard escalating.',
-        priority:      'MODERATE',
-        impact_score:  58,
-        severity_color:'Yellow',
-        coordinates:   { lat: 17.4512, lng: 78.3840 },
-        distance_km:   3.7,
-        reported_at:   '11:05',
-      },
-    ],
+    id: 'rd-001',
+    title: 'Pothole Collapse — NH65',
+    description: 'Large pothole collapse near Tolichowki flyover. 3 vehicles damaged. Peak-hour traffic building rapidly.',
+    direction: 'Proceed 1.2km North on NH-65 to Tolichowki Flyover Junction',
+    distance: '1.2 km',
+    priority: 'HIGH',
+    time: '08:30',
   },
   {
-    id: 'ELECTRICAL',
-    icon: '⚡',
-    color: '#F59E0B',
-    accentBg: '#FFFBEB',
-    domain: 'ELECTRICITY',
-    depots: [
-      { name: 'TSGENCO Substation 3', address: 'Attapur',   distance_km: 2.4 },
-      { name: 'City Electrical Depot', address: 'Kondapur', distance_km: 4.8 },
-    ],
-    incidents: [
-      {
-        event_id:      'demo-e1',
-        title:         'Live Wire — School Entrance',
-        description:   'Live wire exposed near Greenfield Public School main entrance. Immediate electrocution risk to students and staff.',
-        priority:      'CRITICAL',
-        impact_score:  95,
-        severity_color:'Red',
-        coordinates:   { lat: 17.4482, lng: 78.3914 },
-        distance_km:   0.8,
-        reported_at:   '08:47',
-      },
-      {
-        event_id:      'demo-e2',
-        title:         'Transformer Fire — Block C',
-        description:   'Transformer overheating and sparking at residential Block C. Power cut to 200+ units. Risk of fire spreading.',
-        priority:      'HIGH',
-        impact_score:  76,
-        severity_color:'Orange',
-        coordinates:   { lat: 17.4521, lng: 78.3877 },
-        distance_km:   1.6,
-        reported_at:   '09:58',
-      },
-    ],
+    id: 'rd-002',
+    title: 'Road Flooding — Sector 7',
+    description: 'Storm water overflow across Sector 7 main road. Multiple vehicles stalled. Emergency diversion needed immediately.',
+    direction: 'Proceed 0.8km South-West to Sector 7 Junction, Banjara Hills',
+    distance: '0.8 km',
+    priority: 'CRITICAL',
+    time: '09:15',
   },
   {
-    id: 'ROAD',
-    icon: '🚧',
-    color: '#6B7280',
-    accentBg: '#F9FAFB',
-    domain: 'TRAFFIC',
-    depots: [
-      { name: 'Roads & Bridges Unit 2', address: 'Kukatpally', distance_km: 3.2 },
-      { name: 'Traffic Division HQ',    address: 'Abids',      distance_km: 6.1 },
-    ],
-    incidents: [
-      {
-        event_id:      'demo-r1',
-        title:         'Pothole Collapse — NH65',
-        description:   'Large pothole collapse on NH-65 near Tolichowki flyover. 3 vehicles damaged, road partially blocked. Peak hour traffic building.',
-        priority:      'HIGH',
-        impact_score:  61,
-        severity_color:'Orange',
-        coordinates:   { lat: 17.4423, lng: 78.3977 },
-        distance_km:   2.1,
-        reported_at:   '07:30',
-      },
-      {
-        event_id:      'demo-r2',
-        title:         'Fallen Tree — Main Boulevard',
-        description:   'Large tree fallen across the main boulevard after last night\'s rain. Blocking both lanes. Diversion needed.',
-        priority:      'MODERATE',
-        impact_score:  44,
-        severity_color:'Yellow',
-        coordinates:   { lat: 17.4399, lng: 78.4023 },
-        distance_km:   4.5,
-        reported_at:   '06:15',
-      },
-    ],
+    id: 'rd-003',
+    title: 'Fallen Tree — Main Boulevard',
+    description: "Large tree blocking both lanes after last night's rain. Emergency diversion setup required.",
+    direction: 'Proceed 2.4km East on Main Boulevard towards Jubilee Hills Check Post',
+    distance: '2.4 km',
+    priority: 'MODERATE',
+    time: '09:48',
   },
   {
-    id: 'FIRE HAZARD',
-    icon: '🔥',
-    color: '#EF4444',
-    accentBg: '#FEF2F2',
-    domain: 'MUNICIPAL',
-    depots: [
-      { name: 'Fire Station Alpha',   address: 'Banjara Hills', distance_km: 1.1 },
-      { name: 'Hazmat Response Unit', address: 'Jubilee Hills', distance_km: 3.7 },
-    ],
-    incidents: [
-      {
-        event_id:      'demo-f1',
-        title:         'Gas Leak — Skyline Apartments',
-        description:   'Gas leak reported at Skyline Apartment Complex Block C. Immediate evacuation required. Approx 500 residents at risk.',
-        priority:      'CRITICAL',
-        impact_score:  98,
-        severity_color:'Red',
-        coordinates:   { lat: 17.4390, lng: 78.4010 },
-        distance_km:   0.5,
-        reported_at:   '12:11',
-      },
-    ],
-  },
-  {
-    id: 'SANITATION',
-    icon: '🧹',
-    color: '#10B981',
-    accentBg: '#ECFDF5',
-    domain: 'SANITATION',
-    depots: [
-      { name: 'GHMC Sanitation Depot',    address: 'Mehdipatnam', distance_km: 0.9 },
-      { name: 'Waste Management Unit 5',  address: 'Tolichowki',  distance_km: 2.7 },
-    ],
-    incidents: [
-      {
-        event_id:      'demo-s1',
-        title:         'Garbage Pile — Market Area',
-        description:   'Uncollected garbage accumulation for 5+ days near the central market. Attracting pests. Health hazard escalating.',
-        priority:      'MODERATE',
-        impact_score:  52,
-        severity_color:'Yellow',
-        coordinates:   { lat: 17.4445, lng: 78.3855 },
-        distance_km:   2.8,
-        reported_at:   '08:20',
-      },
-      {
-        event_id:      'demo-s2',
-        title:         'Drain Blockage — Residential Colony',
-        description:   'Storm drain blocked causing standing water in residential colony. Mosquito breeding concern. 3 households affected.',
-        priority:      'HIGH',
-        impact_score:  67,
-        severity_color:'Orange',
-        coordinates:   { lat: 17.4468, lng: 78.3898 },
-        distance_km:   1.5,
-        reported_at:   '10:45',
-      },
-    ],
+    id: 'rd-004',
+    title: 'Damaged Road Divider — Ring Road',
+    description: 'Concrete divider partially collapsed after vehicle collision. Oncoming traffic at risk.',
+    direction: 'Proceed 3.1km North on Outer Ring Road, Exit 14-B near Kondapur',
+    distance: '3.1 km',
+    priority: 'MODERATE',
+    time: '10:20',
   },
 ];
 
+const INITIAL_ACTIVE = [
+  {
+    id: 'ai-001',
+    title: 'Road Barrier — Hitech City',
+    description: 'Safety barrier fallen across IT corridor road. Multiple vehicles slowed.',
+    direction: 'Proceed 4.0km West on Hitech City Main Road to Cybergate Junction',
+    distance: '4.0 km',
+    status: 'EN_ROUTE',
+    acceptedAt: '07:50',
+    priority: 'MODERATE',
+  },
+  {
+    id: 'ai-002',
+    title: 'Waterlogging — Jubilee Hills Rd 45',
+    description: 'Severe waterlogging on Road 45, Jubilee Hills. Blocking residential traffic.',
+    direction: 'Proceed 2.1km North-East to Road 45, Jubilee Hills near Hotel Taj',
+    distance: '2.1 km',
+    status: 'PENDING',
+    acceptedAt: '08:10',
+    priority: 'HIGH',
+  },
+];
+
+// Priority badge colour map
+const PRI = {
+  CRITICAL: { bg: '#FEF2F2', text: '#DC2626', border: '#FCA5A5' },
+  HIGH:     { bg: '#FFFBEB', text: '#D97706', border: '#FCD34D' },
+  MODERATE: { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' },
+  LOW:      { bg: '#F0FDF4', text: '#16A34A', border: '#BBF7D0' },
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Root
+// ROOT COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [appState,         setAppState]         = useState(STATES.LOGIN);
-  const [selectedScenario, setSelectedScenario] = useState(null); // scenario object
-  const [selectedIncident, setSelectedIncident] = useState(null); // incident object
-  const [currentLocation,  setCurrentLocation]  = useState(
-    IS_DEMO ? { lat: 17.4501, lng: 78.39 } : null,
-  );
+  const [appState,      setAppState]      = useState(STATES.SPLASH);
+  const [dutyModal,     setDutyModal]     = useState(false);
+  const [menuVisible,   setMenuVisible]   = useState(false);
+  const [activeIssues,  setActiveIssues]  = useState(INITIAL_ACTIVE);
+  const [selectedTask,  setSelectedTask]  = useState(null);
+  // verifyPhase: 'idle' | 'camera' | 'processing' | 'success'
+  const [verifyPhase,   setVerifyPhase]   = useState('idle');
+  const [capturedImage, setCapturedImage] = useState(null);
 
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const socketRef       = useRef(null);
-  const pingIntervalRef = useRef(null);
+  const [camPerm, requestCamPerm] = useCameraPermissions();
 
-  // ── Permissions (native only) ─────────────────────────────────────────────
+  // ── Splash auto-advance ───────────────────────────────────────────────────
   useEffect(() => {
-    if (IS_DEMO) return;
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (!cameraPermission?.granted) await requestCameraPermission();
-      if (status !== 'granted')
-        Alert.alert('Location Required', 'Enable location access to receive dispatches.');
-    })();
-    return () => _cleanup();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (appState !== STATES.SPLASH) return;
+    const t = setTimeout(() => {
+      setAppState(STATES.DASHBOARD);
+      setDutyModal(true);
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [appState]);
 
-  // ── WebSocket (native only) ───────────────────────────────────────────────
-  const connectSocket = useCallback(() => {
-    if (IS_DEMO) return;
-    socketRef.current?.disconnect();
-    const socket = io(BACKEND_BASE_URL, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionAttempts: 15,
-      reconnectionDelay: 3000,
-    });
-    socket.on('connect',       () => console.log('[WS] connected'));
-    socket.on('disconnect',    (r) => console.log('[WS] disconnected:', r));
-    socket.on('connect_error', (e) => console.warn('[WS] error:', e.message));
-    socketRef.current = socket;
-  }, []);
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  const goOnDuty = () => setDutyModal(false);
 
-  // ── GPS ping (broadcasts officer location to backend every 5 s) ──────────
-  const _sendPing = async () => {
-    if (IS_DEMO) return;
-    try {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const { latitude: lat, longitude: lng, accuracy } = loc.coords;
-      setCurrentLocation({ lat, lng });
-      await fetch(`${BACKEND_BASE_URL}/api/v1/officer/update-location`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          officer_id: OFFICER_ID, status: 'AVAILABLE', lat, lng,
-          accuracy_meters: accuracy ?? null, battery_percent: null,
-          timestamp: new Date().toISOString(),
-        }),
-      });
-    } catch (e) { console.warn('[GPS]', e.message); }
+  const acceptDispatch = (dispatch) => {
+    const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    setActiveIssues(prev => [{ ...dispatch, status: 'EN_ROUTE', acceptedAt: now }, ...prev]);
+    setAppState(STATES.RECENT_ISSUES);
   };
 
-  const startPing = useCallback(() => {
-    _sendPing();
-    pingIntervalRef.current = setInterval(_sendPing, PING_INTERVAL_MS);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const stopPing = useCallback(() => {
-    clearInterval(pingIntervalRef.current);
-    pingIntervalRef.current = null;
-  }, []);
-
-  const _cleanup = () => {
-    stopPing();
-    socketRef.current?.disconnect();
-    socketRef.current = null;
+  const selectTask = (task) => {
+    setSelectedTask(task);
+    setVerifyPhase('idle');
+    setCapturedImage(null);
+    setAppState(STATES.ACTIVE_TASK);
   };
 
-  // ── State transitions ─────────────────────────────────────────────────────
-
-  const handleLogin = useCallback(() => {
-    setAppState(STATES.OFF_DUTY);
-  }, []);
-
-  const handleGoOnDuty = useCallback(async () => {
-    if (!IS_DEMO) {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Enable location to go on duty.');
-        return;
-      }
-      connectSocket();
-      startPing();
-    }
-    vibrate([0, 200]);
-    setAppState(STATES.SCENARIO_QUEUE);
-  }, [connectSocket, startPing]);
-
-  const handleGoOffDuty = useCallback(() => {
-    _cleanup();
-    setSelectedScenario(null);
-    setSelectedIncident(null);
-    setAppState(STATES.OFF_DUTY);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSelectScenario = useCallback((scenario) => {
-    setSelectedScenario(scenario);
-    setAppState(STATES.INCIDENT_LIST);
-  }, []);
-
-  const handleBackToQueue = useCallback(() => {
-    setSelectedScenario(null);
-    setAppState(STATES.SCENARIO_QUEUE);
-  }, []);
-
-  const handleAcceptIncident = useCallback((incident) => {
-    vibrate([0, 300, 100, 300]);
-    setSelectedIncident(incident);
-    stopPing(); // stop location broadcast while en route
-    setAppState(STATES.EN_ROUTE);
-  }, [stopPing]);
-
-  const handleTaskComplete = useCallback(() => {
+  const taskCompleted = async () => {
+    if (Platform.OS !== 'web' && !camPerm?.granted) await requestCamPerm();
     setAppState(STATES.VERIFICATION);
-  }, []);
-
-  const handleVerificationComplete = useCallback(async (payload) => {
-    if (IS_DEMO) {
-      Alert.alert(
-        '✅  TASK VERIFIED',
-        'In production this photo + GPS is sent to the AI Vision Agent for confirmation.',
-        [{
-          text: 'DONE',
-          onPress: () => {
-            setSelectedIncident(null);
-            setSelectedScenario(null);
-            setAppState(STATES.SCENARIO_QUEUE);
-            if (!IS_DEMO) startPing();
-          },
-        }],
-      );
-      return;
-    }
-    try {
-      const res    = await fetch(`${BACKEND_BASE_URL}/api/v1/officer/verify-resolution`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
-      });
-      const result = await res.json();
-      const returnToQueue = () => {
-        setSelectedIncident(null);
-        setSelectedScenario(null);
-        setAppState(STATES.SCENARIO_QUEUE);
-        startPing();
-      };
-      if (result.verified) {
-        Alert.alert('✅ VERIFIED', 'Issue confirmed resolved!', [{ text: 'DONE', onPress: returnToQueue }]);
-      } else if (!result.gps_match) {
-        Alert.alert('📍 GPS MISMATCH', result.vision_analysis ?? 'Move closer and retry.', [{ text: 'RETRY' }]);
-      } else {
-        Alert.alert('❌ NOT VERIFIED', result.vision_analysis ?? 'Please retry.', [{ text: 'RETRY' }]);
-      }
-    } catch { Alert.alert('Network Error', 'Check connection and retry.'); }
-  }, [startPing]);
-
-  const handleCancelVerification = useCallback(() => {
-    setAppState(STATES.EN_ROUTE);
-  }, []);
-
-  const handleCancelEnRoute = useCallback(() => {
-    setSelectedIncident(null);
-    setAppState(STATES.INCIDENT_LIST);
-    if (!IS_DEMO) startPing();
-  }, [startPing]);
-
-  // ── Render ────────────────────────────────────────────────────────────────
-  const screenContent = () => {
-    // LOGIN — full-screen auth (no header needed)
-    if (appState === STATES.LOGIN)
-      return <LoginScreen onLogin={handleLogin} />;
-
-    // SCENARIO QUEUE — full-screen dashboard with its own header
-    if (appState === STATES.SCENARIO_QUEUE)
-      return (
-        <ScenarioQueueScreen
-          scenarios={SCENARIOS}
-          officerId={OFFICER_ID}
-          location={currentLocation}
-          isDemo={IS_DEMO}
-          onSelectScenario={handleSelectScenario}
-          onGoOffDuty={handleGoOffDuty}
-        />
-      );
-
-    // INCIDENT LIST — full-screen with its own header
-    if (appState === STATES.INCIDENT_LIST && selectedScenario)
-      return (
-        <IncidentListScreen
-          scenario={selectedScenario}
-          onAccept={handleAcceptIncident}
-          onBack={handleBackToQueue}
-        />
-      );
-
-    // EN ROUTE — full-screen with map placeholder + geofencing
-    if (appState === STATES.EN_ROUTE && selectedIncident)
-      return (
-        <EnRouteScreen
-          incident={selectedIncident}
-          currentLocation={currentLocation}
-          isDemo={IS_DEMO}
-          onTaskComplete={handleTaskComplete}
-          onCancel={handleCancelEnRoute}
-        />
-      );
-
-    // VERIFICATION — full-screen live camera
-    if (appState === STATES.VERIFICATION && selectedIncident)
-      return (
-        <CameraScreen
-          task={selectedIncident}
-          officerId={OFFICER_ID}
-          onComplete={handleVerificationComplete}
-          onCancel={handleCancelVerification}
-        />
-      );
-
-    // OFF DUTY — wrapped in the global header
-    return (
-      <SafeAreaView style={styles.root}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>CIVIX</Text>
-          <View style={styles.headerRight}>
-            {IS_DEMO && (
-              <View style={styles.demoBadge}>
-                <Text style={styles.demoBadgeText}>DEMO</Text>
-              </View>
-            )}
-            <Text style={styles.officerBadge}>{OFFICER_ID}</Text>
-          </View>
-        </View>
-        <View style={styles.body}>
-          <OffDutyScreen onGoOnDuty={handleGoOnDuty} />
-        </View>
-      </SafeAreaView>
-    );
   };
 
-  return <PhoneFrame>{screenContent()}</PhoneFrame>;
+  // Called by CameraScreen with base64 string (or null on web demo)
+  const handlePhotoCapture = (base64) => {
+    setCapturedImage(base64);
+    setVerifyPhase('processing');
+    setTimeout(() => setVerifyPhase('success'), 3000);
+  };
+
+  const returnToDashboard = () => {
+    if (selectedTask) setActiveIssues(p => p.filter(t => t.id !== selectedTask.id));
+    setSelectedTask(null);
+    setCapturedImage(null);
+    setVerifyPhase('idle');
+    setAppState(STATES.DASHBOARD);
+  };
+
+  const goBack = () => {
+    // Block back navigation during AI processing / success
+    if (appState === STATES.VERIFICATION && verifyPhase !== 'idle') return;
+    const map = {
+      [STATES.RECENT_ISSUES]: STATES.DASHBOARD,
+      [STATES.ACTIVE_TASK]:   STATES.RECENT_ISSUES,
+      [STATES.VERIFICATION]:  STATES.ACTIVE_TASK,
+    };
+    setAppState(map[appState] ?? STATES.DASHBOARD);
+  };
+
+  // ── Screen renderer ───────────────────────────────────────────────────────
+  const renderScreen = () => {
+    switch (appState) {
+
+      case STATES.SPLASH:
+        return <SplashScreen />;
+
+      case STATES.DASHBOARD:
+        return (
+          <DashboardScreen
+            dispatches={ROAD_DISPATCHES}
+            dutyModal={dutyModal}
+            menuVisible={menuVisible}
+            onGoOnDuty={goOnDuty}
+            onAccept={acceptDispatch}
+            onRecentIssues={() => setAppState(STATES.RECENT_ISSUES)}
+            onGoOffDuty={() => setAppState(STATES.SPLASH)}
+            onMenuOpen={() => setMenuVisible(true)}
+            onMenuClose={() => setMenuVisible(false)}
+          />
+        );
+
+      case STATES.RECENT_ISSUES:
+        return (
+          <RecentIssuesScreen
+            tasks={activeIssues}
+            onSelect={selectTask}
+            onBack={goBack}
+          />
+        );
+
+      case STATES.ACTIVE_TASK:
+        return (
+          <ActiveTaskScreen
+            task={selectedTask}
+            onCompleted={taskCompleted}
+            onBack={goBack}
+          />
+        );
+
+      case STATES.VERIFICATION:
+        if (verifyPhase === 'camera')
+          return (
+            <CameraScreen
+              onCapture={handlePhotoCapture}
+              onClose={() => setVerifyPhase('idle')}
+            />
+          );
+        return (
+          <VerificationScreen
+            phase={verifyPhase}
+            capturedImage={capturedImage}
+            taskTitle={selectedTask?.title}
+            onOpenCamera={() => setVerifyPhase('camera')}
+            onReturn={returnToDashboard}
+            onBack={goBack}
+          />
+        );
+
+      default:
+        return <SplashScreen />;
+    }
+  };
+
+  return (
+    <PhoneFrame>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      {renderScreen()}
+    </PhoneFrame>
+  );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OFF DUTY sub-screen (inline — no state, no imports needed)
-// ─────────────────────────────────────────────────────────────────────────────
-function OffDutyScreen({ onGoOnDuty }) {
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SCREEN: SPLASH
+// ═════════════════════════════════════════════════════════════════════════════
+function SplashScreen() {
   return (
-    <View style={styles.offDutyContainer}>
-
-      {/* ── Status hero ── */}
-      <View style={styles.statusHero}>
-        <Text style={styles.statusLabel}>OFFICER STATUS</Text>
-        <Text style={[styles.statusValue, { color: '#374151' }]}>OFF DUTY</Text>
-        <Text style={styles.statusSubtext}>You are off the dispatch grid</Text>
-      </View>
-
-      {/* ── Officer info card ── */}
-      <View style={styles.officerCard}>
-        <View style={styles.officerRow}>
-          <Text style={styles.officerLabel}>OFFICER ID</Text>
-          <Text style={styles.officerValue}>{OFFICER_ID}</Text>
+    <View style={spl.root}>
+      <View style={spl.logoWrap}>
+        <View style={spl.logoRow}>
+          <Text style={spl.logo}>CIVIX</Text>
+          <View style={spl.dot} />
         </View>
-        <View style={styles.cardDivider} />
-        <View style={styles.officerRow}>
-          <Text style={styles.officerLabel}>STATUS</Text>
-          <View style={styles.officerValueRow}>
-            <View style={styles.inactiveDot} />
-            <Text style={styles.officerValue}>INACTIVE</Text>
+        <Text style={spl.sub}>FIELD OPERATIONS</Text>
+      </View>
+      <ActivityIndicator size="large" color={T.accent} />
+      <Text style={spl.hint}>Initializing secure connection…</Text>
+    </View>
+  );
+}
+const spl = StyleSheet.create({
+  root:    { flex: 1, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  logoWrap:{ alignItems: 'center', marginBottom: 48 },
+  logoRow: { flexDirection: 'row', alignItems: 'center' },
+  logo:    { fontSize: 44, fontWeight: '900', color: T.text, letterSpacing: 8 },
+  dot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: T.accent, marginLeft: 6, marginTop: 10 },
+  sub:     { fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 4, marginTop: 8 },
+  hint:    { fontSize: 12, color: '#D1D5DB', marginTop: 20, letterSpacing: 0.3 },
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SHARED: AppHeader
+// ═════════════════════════════════════════════════════════════════════════════
+function AppHeader({ title, onBack, right }) {
+  return (
+    <View style={hdr.bar}>
+      {onBack ? (
+        <TouchableOpacity onPress={onBack} style={hdr.backBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={hdr.arrow}>←</Text>
+          <Text style={hdr.backLabel}>Back</Text>
+        </TouchableOpacity>
+      ) : <View style={hdr.side} />}
+      <Text style={hdr.title}>{title}</Text>
+      <View style={hdr.side}>{right || null}</View>
+    </View>
+  );
+}
+const hdr = StyleSheet.create({
+  bar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F3F4' },
+  backBtn:  { flexDirection: 'row', alignItems: 'center' },
+  arrow:    { fontSize: 22, color: T.accent, fontWeight: '700', marginRight: 4 },
+  backLabel:{ fontSize: 14, color: T.accent, fontWeight: '600' },
+  title:    { fontSize: 13, fontWeight: '800', color: T.text, letterSpacing: 2 },
+  side:     { width: 70 },
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SHARED: InfoRow (used in modals)
+// ═════════════════════════════════════════════════════════════════════════════
+function InfoRow({ label, value, valueColor }) {
+  return (
+    <View style={ir.row}>
+      <Text style={ir.label}>{label}</Text>
+      <Text style={[ir.value, valueColor ? { color: valueColor } : null]}>{value}</Text>
+    </View>
+  );
+}
+const ir = StyleSheet.create({
+  row:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
+  label: { fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 },
+  value: { fontSize: 13, fontWeight: '700', color: T.text },
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SCREEN: DASHBOARD
+// ═════════════════════════════════════════════════════════════════════════════
+function DashboardScreen({
+  dispatches, dutyModal, menuVisible,
+  onGoOnDuty, onAccept, onRecentIssues, onGoOffDuty, onMenuOpen, onMenuClose,
+}) {
+  return (
+    <SafeAreaView style={dsh.root}>
+
+      {/* ── GO ON DUTY MODAL ──────────────────────────────────────────── */}
+      <Modal visible={dutyModal} transparent animationType="fade">
+        <View style={dsh.modalOverlay}>
+          <View style={dsh.modalCard}>
+            <View style={dsh.mLogoRow}>
+              <Text style={dsh.mLogo}>CIVIX</Text>
+              <View style={dsh.mLogoDot} />
+            </View>
+            <Text style={dsh.mSub}>Field Operations Ready</Text>
+            <View style={dsh.mDivider} />
+            <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
+            <InfoRow label="ROLE"        value={OFFICER_ROLE} />
+            <InfoRow label="DEPARTMENT"  value="Field Operations" />
+            <TouchableOpacity style={dsh.dutyBtn} onPress={onGoOnDuty} activeOpacity={0.85}>
+              <Text style={dsh.dutyBtnText}>GO ON DUTY</Text>
+            </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.cardDivider} />
-        <View style={styles.officerRow}>
-          <Text style={styles.officerLabel}>DOMAIN</Text>
-          <Text style={styles.officerValue}>FIELD OPS</Text>
+      </Modal>
+
+      {/* ── PROFILE / SETTINGS SLIDE-UP ───────────────────────────────── */}
+      <Modal visible={menuVisible} transparent animationType="slide">
+        <TouchableOpacity style={dsh.menuOverlay} onPress={onMenuClose} activeOpacity={1}>
+          <View style={dsh.menuPanel}>
+            <View style={dsh.menuHandle} />
+            <Text style={dsh.menuTitle}>Officer Profile</Text>
+            <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
+            <InfoRow label="ROLE"        value={OFFICER_ROLE} />
+            <InfoRow label="DEPARTMENT"  value="Field Operations" />
+            <InfoRow label="SHIFT"       value="07:00 — 19:00" />
+            <InfoRow label="STATUS"      value="ON DUTY" valueColor={T.success} />
+            <TouchableOpacity style={dsh.menuCloseBtn} onPress={onMenuClose} activeOpacity={0.85}>
+              <Text style={dsh.menuCloseBtnText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── TOP NAVIGATION BAR ────────────────────────────────────────── */}
+      <View style={dsh.header}>
+        <TouchableOpacity onPress={onMenuOpen} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <View style={dsh.ham}>
+            <View style={dsh.hamLine} />
+            <View style={[dsh.hamLine, { width: 16 }]} />
+            <View style={dsh.hamLine} />
+          </View>
+        </TouchableOpacity>
+        <Text style={dsh.headerTitle}>CIVIX</Text>
+        <View style={dsh.liveRow}>
+          <View style={dsh.liveDot} />
+          <Text style={dsh.liveText}>LIVE</Text>
         </View>
       </View>
 
-      {/* ── GO ON DUTY ── */}
-      <TouchableOpacity style={styles.primaryBtn} onPress={onGoOnDuty} activeOpacity={0.85}>
-        <Text style={styles.primaryBtnText}>GO ON DUTY</Text>
-      </TouchableOpacity>
+      {/* ── SECTION LABEL + ROLE BADGE ────────────────────────────────── */}
+      <View style={dsh.sectionRow}>
+        <Text style={dsh.sectionTitle}>AWAITING DISPATCHES</Text>
+        <View style={dsh.roleBadge}>
+          <Text style={dsh.roleBadgeText}>🚧  ROAD WORKER</Text>
+        </View>
+      </View>
 
+      {/* ── DISPATCH LIST ─────────────────────────────────────────────── */}
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={dsh.listContent}
+      >
+        {dispatches.map(d => <DispatchCard key={d.id} d={d} onAccept={onAccept} />)}
+        <View style={{ height: 16 }} />
+      </ScrollView>
+
+      {/* ── BOTTOM BAR ────────────────────────────────────────────────── */}
+      <View style={dsh.bottomBar}>
+        <TouchableOpacity style={dsh.recentBtn} onPress={onRecentIssues} activeOpacity={0.85}>
+          <Text style={dsh.recentBtnText}>📋  RECENT ISSUES</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={dsh.offDutyBtn} onPress={onGoOffDuty} activeOpacity={0.85}>
+          <Text style={dsh.offDutyBtnText}>GO OFF DUTY</Text>
+        </TouchableOpacity>
+      </View>
+
+    </SafeAreaView>
+  );
+}
+
+// ── Dispatch Card ────────────────────────────────────────────────────────────
+function DispatchCard({ d, onAccept }) {
+  const ps = PRI[d.priority] || PRI.MODERATE;
+  return (
+    <View style={dc.card}>
+      <View style={dc.top}>
+        <View style={[dc.pBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+          <Text style={[dc.pText, { color: ps.text }]}>{d.priority}</Text>
+        </View>
+        <Text style={dc.time}>{d.time}</Text>
+      </View>
+      <Text style={dc.title}>{d.title}</Text>
+      <Text style={dc.desc} numberOfLines={2}>{d.description}</Text>
+      <View style={dc.bottom}>
+        <Text style={dc.dist}>📍  {d.distance}</Text>
+        <TouchableOpacity style={dc.acceptBtn} onPress={() => onAccept(d)} activeOpacity={0.85}>
+          <Text style={dc.acceptText}>ACCEPT</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles — enterprise light theme (used only for OFF_DUTY screen + shell)
-// ─────────────────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const dsh = StyleSheet.create({
+  root:         { flex: 1, backgroundColor: T.bg },
+  // Modal overlay
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  modalCard:    { width: '100%', backgroundColor: T.card, borderRadius: T.radius, padding: 28, ...T.shadowLG },
+  mLogoRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  mLogo:        { fontSize: 28, fontWeight: '900', color: T.text, letterSpacing: 5 },
+  mLogoDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: T.accent, marginLeft: 4, marginTop: 4 },
+  mSub:         { fontSize: T.fontXS, fontWeight: '600', color: T.textSecondary, letterSpacing: 2.5, marginBottom: 20 },
+  mDivider:     { height: 1, backgroundColor: T.border, marginBottom: 8 },
+  dutyBtn:      { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', marginTop: 24, ...T.shadow },
+  dutyBtnText:  { color: T.white, fontWeight: '800', fontSize: 16, letterSpacing: 2.5 },
+  // Menu slide-up
+  menuOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  menuPanel:    { backgroundColor: T.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  menuHandle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: T.border, alignSelf: 'center', marginBottom: 20 },
+  menuTitle:    { fontSize: T.fontLG, fontWeight: '800', color: T.text, marginBottom: 16 },
+  menuCloseBtn: { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', marginTop: 24 },
+  menuCloseBtnText: { fontWeight: '700', fontSize: T.fontSM, color: T.text },
+  // Header
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F3F4' },
+  ham:          { gap: 4, paddingVertical: 2 },
+  hamLine:      { width: 22, height: 2, borderRadius: 1, backgroundColor: T.text },
+  headerTitle:  { fontSize: 17, fontWeight: '900', color: T.text, letterSpacing: 5 },
+  liveRow:      { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  liveDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: T.success },
+  liveText:     { fontSize: 11, fontWeight: '700', color: T.success, letterSpacing: 1 },
+  // Section
+  sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 2.5 },
+  roleBadge:    { backgroundColor: '#FFF7ED', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#FED7AA' },
+  roleBadgeText:{ fontSize: 11, fontWeight: '700', color: '#92400E', letterSpacing: 0.5 },
+  // List
+  listContent:  { paddingHorizontal: 16, paddingTop: 4 },
+  // Bottom bar
+  bottomBar:    { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F1F3F4', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20, gap: 10 },
+  recentBtn:    { backgroundColor: '#F3F4F6', borderRadius: T.radiusSM, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: T.border },
+  recentBtnText:{ fontSize: 13, fontWeight: '700', color: T.text, letterSpacing: 1 },
+  offDutyBtn:   { backgroundColor: '#1F2937', borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center' },
+  offDutyBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: 2 },
+});
 
-  // ── Root & shell ────────────────────────────────────────────────────────────
-  root:   { flex: 1, width: '100%', height: '100%', backgroundColor: '#FFFFFF' },
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: '#F1F3F4',
-  },
-  headerTitle:  { fontSize: 17, fontWeight: '900', color: '#111827', letterSpacing: 5 },
-  headerRight:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  demoBadge: {
-    backgroundColor: '#F3F4F6', borderRadius: 20,
-    paddingHorizontal: 9, paddingVertical: 3,
-    borderWidth: 1, borderColor: '#E5E7EB',
-  },
-  demoBadgeText: { fontSize: 10, fontWeight: '700', color: '#6B7280', letterSpacing: 1.5 },
-  officerBadge:  { fontSize: 12, fontWeight: '700', color: '#9CA3AF', letterSpacing: 1.5 },
-  body:          { flex: 1 },
+const dc = StyleSheet.create({
+  card:      { backgroundColor: T.card, borderRadius: T.radius, padding: 16, marginBottom: 12, ...T.shadow },
+  top:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  pBadge:    { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1 },
+  pText:     { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  time:      { fontSize: 12, color: T.textSecondary, fontWeight: '500' },
+  title:     { fontSize: 15, fontWeight: '800', color: T.text, marginBottom: 6 },
+  desc:      { fontSize: 13, color: T.textSecondary, lineHeight: 19, marginBottom: 14 },
+  bottom:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dist:      { fontSize: 13, fontWeight: '600', color: T.textSecondary },
+  acceptBtn: { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingHorizontal: 18, paddingVertical: 10 },
+  acceptText:{ fontSize: 13, fontWeight: '800', color: T.white, letterSpacing: 1 },
+});
 
-  // ── Shared typography ───────────────────────────────────────────────────────
-  statusLabel:   { fontSize: 11, fontWeight: '600', color: '#9CA3AF', letterSpacing: 3.5 },
-  statusValue:   { fontSize: 38, fontWeight: '900', letterSpacing: 1 },
 
-  // ── OFF DUTY screen ─────────────────────────────────────────────────────────
-  offDutyContainer: {
-    flex: 1, justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 32, paddingBottom: 28,
-  },
-  statusHero:    { alignItems: 'center', gap: 8 },
-  statusSubtext: { fontSize: 13, fontWeight: '500', color: '#9CA3AF', textAlign: 'center', marginTop: 2 },
+// ═════════════════════════════════════════════════════════════════════════════
+// SCREEN: RECENT ISSUES
+// ═════════════════════════════════════════════════════════════════════════════
+function RecentIssuesScreen({ tasks, onSelect, onBack }) {
+  return (
+    <SafeAreaView style={ris.root}>
+      <AppHeader title="ACTIVE ISSUES" onBack={onBack} />
+      {tasks.length === 0 ? (
+        <View style={ris.empty}>
+          <Text style={ris.emptyIcon}>📋</Text>
+          <Text style={ris.emptyTitle}>No Active Issues</Text>
+          <Text style={ris.emptyHint}>Accept a dispatch from the dashboard to begin.</Text>
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ris.list}>
+          {tasks.map(task => {
+            const ps = PRI[task.priority] || PRI.MODERATE;
+            const isEnRoute = task.status === 'EN_ROUTE';
+            return (
+              <TouchableOpacity
+                key={task.id}
+                style={ris.card}
+                onPress={() => onSelect(task)}
+                activeOpacity={0.85}
+              >
+                <View style={ris.cardTop}>
+                  <View style={[ris.statusBadge, { backgroundColor: isEnRoute ? '#EFF6FF' : '#F9FAFB' }]}>
+                    <Text style={[ris.statusText, { color: isEnRoute ? T.accent : T.textSecondary }]}>
+                      {isEnRoute ? '🚗  EN ROUTE' : '⏳  PENDING'}
+                    </Text>
+                  </View>
+                  <Text style={ris.acceptedAt}>Accepted {task.acceptedAt}</Text>
+                </View>
+                <Text style={ris.title}>{task.title}</Text>
+                <Text style={ris.desc} numberOfLines={1}>{task.description}</Text>
+                <View style={ris.cardBottom}>
+                  <Text style={ris.dist}>📍  {task.distance}</Text>
+                  <View style={[ris.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+                    <Text style={[ris.priText, { color: ps.text }]}>{task.priority}</Text>
+                  </View>
+                  <Text style={ris.tapHint}>Tap to open  →</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          <View style={{ height: 32 }} />
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+const ris = StyleSheet.create({
+  root:        { flex: 1, backgroundColor: T.bg },
+  empty:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyIcon:   { fontSize: 48, marginBottom: 16 },
+  emptyTitle:  { fontSize: T.fontLG, fontWeight: '800', color: T.text, marginBottom: 8 },
+  emptyHint:   { fontSize: T.fontSM, color: T.textSecondary, textAlign: 'center' },
+  list:        { paddingHorizontal: 16, paddingTop: 12 },
+  card:        { backgroundColor: T.card, borderRadius: T.radius, padding: 16, marginBottom: 12, ...T.shadow },
+  cardTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  statusBadge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  statusText:  { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  acceptedAt:  { fontSize: 11, color: T.textSecondary },
+  title:       { fontSize: 15, fontWeight: '800', color: T.text, marginBottom: 4 },
+  desc:        { fontSize: 12, color: T.textSecondary, marginBottom: 12 },
+  cardBottom:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dist:        { fontSize: 12, fontWeight: '600', color: T.textSecondary, flex: 1 },
+  priBadge:    { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+  priText:     { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  tapHint:     { fontSize: 12, color: T.accent, fontWeight: '600' },
+});
 
-  officerCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 16,
-    borderWidth: 1, borderColor: '#F1F3F4', overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 12, elevation: 2,
-  },
-  officerRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16,
-  },
-  officerLabel:    { fontSize: 11, fontWeight: '600', color: '#9CA3AF', letterSpacing: 2.5 },
-  officerValue:    { fontSize: 13, fontWeight: '700', color: '#111827' },
-  officerValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  inactiveDot:     { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#D1D5DB' },
-  cardDivider:     { height: 1, backgroundColor: '#F1F3F4' },
 
-  primaryBtn: {
-    backgroundColor: '#2563EB', paddingVertical: 18, borderRadius: 14, alignItems: 'center',
-    shadowColor: '#2563EB', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 16, elevation: 6,
-  },
-  primaryBtnText: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: 2 },
+// ═════════════════════════════════════════════════════════════════════════════
+// SCREEN: ACTIVE TASK
+// ═════════════════════════════════════════════════════════════════════════════
+function ActiveTaskScreen({ task, onCompleted, onBack }) {
+  if (!task) return null;
+  const ps = PRI[task.priority] || PRI.MODERATE;
+  return (
+    <SafeAreaView style={ats.root}>
+      <AppHeader title="ACTIVE TASK" onBack={onBack} />
+
+      {/* Priority + title strip */}
+      <View style={[ats.titleStrip, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+        <View style={[ats.priBadge, { backgroundColor: ps.bg, borderColor: ps.border }]}>
+          <Text style={[ats.priText, { color: ps.text }]}>{task.priority}</Text>
+        </View>
+        <Text style={[ats.taskTitle, { color: ps.text }]} numberOfLines={1}>{task.title}</Text>
+      </View>
+
+      {/* Navigation card — vertically centered in remaining space */}
+      <View style={ats.centerArea}>
+        <View style={ats.navCard}>
+          <Text style={ats.navHeader}>🧭  NAVIGATION</Text>
+          <Text style={ats.navDirection}>{task.direction}</Text>
+          <View style={ats.navDivider} />
+          <View style={ats.navMeta}>
+            <View style={ats.metaItem}>
+              <Text style={ats.metaLabel}>DISTANCE</Text>
+              <Text style={ats.metaValue}>{task.distance}</Text>
+            </View>
+            <View style={ats.metaSep} />
+            <View style={ats.metaItem}>
+              <Text style={ats.metaLabel}>ETA</Text>
+              <Text style={ats.metaValue}>~8 min</Text>
+            </View>
+            <View style={ats.metaSep} />
+            <View style={ats.metaItem}>
+              <Text style={ats.metaLabel}>STATUS</Text>
+              <Text style={[ats.metaValue, { color: T.accent }]}>EN ROUTE</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* TASK COMPLETED — always enabled */}
+      <View style={ats.bottomBar}>
+        <TouchableOpacity style={ats.completedBtn} onPress={onCompleted} activeOpacity={0.85}>
+          <Text style={ats.completedBtnText}>✓  TASK COMPLETED</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+const ats = StyleSheet.create({
+  root:            { flex: 1, backgroundColor: T.bg },
+  titleStrip:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, gap: 10 },
+  priBadge:        { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, borderWidth: 1 },
+  priText:         { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  taskTitle:       { fontSize: 14, fontWeight: '700', flex: 1 },
+  // Center nav card
+  centerArea:      { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+  navCard:         { backgroundColor: T.card, borderRadius: T.radius, padding: 24, width: '100%', ...T.shadowLG },
+  navHeader:       { fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 3, marginBottom: 14 },
+  navDirection:    { fontSize: 18, fontWeight: '700', color: T.text, lineHeight: 26, marginBottom: 20 },
+  navDivider:      { height: 1, backgroundColor: T.border, marginBottom: 16 },
+  navMeta:         { flexDirection: 'row', alignItems: 'center' },
+  metaItem:        { flex: 1, alignItems: 'center' },
+  metaLabel:       { fontSize: 10, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5, marginBottom: 4 },
+  metaValue:       { fontSize: 15, fontWeight: '800', color: T.text },
+  metaSep:         { width: 1, height: 32, backgroundColor: T.border },
+  // Bottom
+  bottomBar:       { paddingHorizontal: 16, paddingBottom: 28, paddingTop: 12, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F1F3F4' },
+  completedBtn:    { backgroundColor: T.success, borderRadius: T.radiusSM, paddingVertical: 20, alignItems: 'center', ...T.shadow },
+  completedBtnText:{ fontSize: 16, fontWeight: '800', color: T.white, letterSpacing: 2 },
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SCREEN: VERIFICATION
+// ═════════════════════════════════════════════════════════════════════════════
+function VerificationScreen({ phase, capturedImage, taskTitle, onOpenCamera, onReturn, onBack }) {
+  return (
+    <SafeAreaView style={vs.root}>
+
+      {/* Header — only show back arrow when idle */}
+      {phase === 'idle' && <AppHeader title="VERIFICATION" onBack={onBack} />}
+
+      {/* ── IDLE: photo button ──────────────────────────────────────────── */}
+      {phase === 'idle' && (
+        <View style={vs.idleContent}>
+          <View style={vs.idleHero}>
+            <View style={vs.idleIconWrap}>
+              <Text style={vs.idleIcon}>📸</Text>
+            </View>
+            <Text style={vs.idleTitle}>Photo Verification Required</Text>
+            <Text style={vs.idleDesc}>
+              Take a live photo to confirm the issue has been resolved.{'\n'}
+              This triggers automatic fund release via the AI Swarm.
+            </Text>
+            {taskTitle && (
+              <View style={vs.taskChip}>
+                <Text style={vs.taskChipText} numberOfLines={1}>📌  {taskTitle}</Text>
+              </View>
+            )}
+          </View>
+          <TouchableOpacity style={vs.photoBtn} onPress={onOpenCamera} activeOpacity={0.85}>
+            <Text style={vs.photoBtnText}>PHOTO VERIFICATION</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── PROCESSING + SUCCESS ────────────────────────────────────────── */}
+      {(phase === 'processing' || phase === 'success') && (
+        <View style={vs.processContent}>
+
+          {/* Thumbnail */}
+          <View style={vs.thumbnailWrap}>
+            {capturedImage ? (
+              <Image source={{ uri: capturedImage }} style={vs.thumbnail} resizeMode="cover" />
+            ) : (
+              <View style={[vs.thumbnail, vs.thumbPlaceholder]}>
+                <Text style={vs.thumbPlaceholderIcon}>📷</Text>
+              </View>
+            )}
+            {phase === 'success' && (
+              <View style={vs.checkOverlay}>
+                <Text style={vs.checkIcon}>✓</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Processing state */}
+          {phase === 'processing' && (
+            <View style={vs.processingBox}>
+              <ActivityIndicator size="large" color={T.accent} style={{ marginBottom: 16 }} />
+              <Text style={vs.processingTitle}>AI Swarm Verifying Resolution…</Text>
+              <Text style={vs.processingHint}>Analyzing photo, GPS coordinates, and incident data</Text>
+            </View>
+          )}
+
+          {/* Success state */}
+          {phase === 'success' && (
+            <View style={vs.successBox}>
+              <Text style={vs.successIcon}>✅</Text>
+              <Text style={vs.successTitle}>Verification Successful</Text>
+              <Text style={vs.successSub}>Funds Released</Text>
+              <View style={vs.successCard}>
+                <Text style={vs.successCardText}>
+                  The AI Swarm confirmed the resolution. Incident closed and payment processed automatically.
+                </Text>
+              </View>
+              <TouchableOpacity style={vs.returnBtn} onPress={onReturn} activeOpacity={0.85}>
+                <Text style={vs.returnBtnText}>RETURN TO DASHBOARD</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+        </View>
+      )}
+
+    </SafeAreaView>
+  );
+}
+const vs = StyleSheet.create({
+  root:                { flex: 1, backgroundColor: T.bg },
+  // Idle
+  idleContent:         { flex: 1, justifyContent: 'space-between', padding: 20, paddingBottom: 28 },
+  idleHero:            { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  idleIconWrap:        { width: 100, height: 100, borderRadius: 50, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', marginBottom: 24, borderWidth: 2, borderColor: '#BFDBFE' },
+  idleIcon:            { fontSize: 44 },
+  idleTitle:           { fontSize: 20, fontWeight: '800', color: T.text, textAlign: 'center', marginBottom: 12 },
+  idleDesc:            { fontSize: 14, color: T.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 20 },
+  taskChip:            { backgroundColor: '#F3F4F6', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6, borderWidth: 1, borderColor: T.border },
+  taskChipText:        { fontSize: 12, fontWeight: '600', color: T.text, maxWidth: 240 },
+  photoBtn:            { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 22, alignItems: 'center', ...T.shadowLG },
+  photoBtnText:        { fontSize: 16, fontWeight: '800', color: T.white, letterSpacing: 2.5 },
+  // Processing + success shared
+  processContent:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  thumbnailWrap:       { position: 'relative', marginBottom: 28 },
+  thumbnail:           { width: 160, height: 160, borderRadius: T.radius, ...T.shadowLG },
+  thumbPlaceholder:    { backgroundColor: '#1C1C1E', alignItems: 'center', justifyContent: 'center' },
+  thumbPlaceholderIcon:{ fontSize: 52 },
+  checkOverlay:        { position: 'absolute', bottom: -14, right: -14, width: 44, height: 44, borderRadius: 22, backgroundColor: T.success, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF' },
+  checkIcon:           { fontSize: 20, color: '#FFFFFF', fontWeight: '900' },
+  // Processing
+  processingBox:       { alignItems: 'center' },
+  processingTitle:     { fontSize: 16, fontWeight: '700', color: T.text, textAlign: 'center', marginBottom: 8 },
+  processingHint:      { fontSize: 13, color: T.textSecondary, textAlign: 'center' },
+  // Success
+  successBox:          { alignItems: 'center', width: '100%' },
+  successIcon:         { fontSize: 40, marginBottom: 12 },
+  successTitle:        { fontSize: 22, fontWeight: '900', color: T.text, marginBottom: 4 },
+  successSub:          { fontSize: 16, fontWeight: '700', color: T.success, marginBottom: 20 },
+  successCard:         { backgroundColor: '#ECFDF5', borderRadius: T.radiusSM, padding: 16, width: '100%', borderLeftWidth: 4, borderLeftColor: T.success, marginBottom: 28 },
+  successCardText:     { fontSize: 13, color: '#065F46', lineHeight: 20 },
+  returnBtn:           { backgroundColor: T.accent, borderRadius: T.radiusSM, paddingVertical: 18, alignItems: 'center', width: '100%', ...T.shadow },
+  returnBtnText:       { fontSize: 15, fontWeight: '800', color: T.white, letterSpacing: 2 },
 });
