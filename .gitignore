@@ -7,3 +7,5 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 claudecode-linux-x64
+__pycache__/
+*.pyc
