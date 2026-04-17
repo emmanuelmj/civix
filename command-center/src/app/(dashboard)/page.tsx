@@ -80,7 +80,7 @@ export default function DashboardPage() {
 
   // Default: "Live Grid" — the main 3-panel dashboard
   return (
-    <div className="flex flex-col lg:flex-row h-full min-h-0">
+    <div className="flex flex-col lg:flex-row flex-1 min-h-0 overflow-hidden">
       {/* Mobile tab bar */}
       <div className="flex lg:hidden border-b shrink-0 glass"
         style={{ borderColor: "rgba(0,0,0,0.06)" }}>
@@ -98,8 +98,8 @@ export default function DashboardPage() {
       </div>
 
       {/* Mobile stats bar */}
-      <div className="flex lg:hidden items-center gap-3 px-3 py-1.5 border-b overflow-x-auto shrink-0"
-        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+      <div className="flex lg:hidden items-center gap-3 px-3 py-1.5 border-b overflow-x-auto shrink-0 glass"
+        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
         <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
         <StatPill label="Crit" value={stats.critical} color="var(--accent-crimson)" />
         <StatPill label="Done" value={stats.resolved} color="var(--accent-green)" />
@@ -112,7 +112,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Center: Map + Stats — desktop */}
-      <div className="hidden lg:flex flex-1 flex-col min-w-0 min-h-0">
+      <div className="hidden lg:flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
         <div className="flex items-center gap-6 px-5 py-3 border-b shrink-0 glass"
           style={{ borderColor: "rgba(0,0,0,0.06)" }}>
           <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
@@ -148,11 +148,14 @@ export default function DashboardPage() {
           </div>
         </div>
         {/* Smart Filter Bar */}
-        <div className="shrink-0 border-b" style={{ borderColor: "var(--border-light)" }}>
+        <div className="shrink-0 border-b glass" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
           <FilterBar events={activeEvents} onFilterChange={setFilteredEvents} />
         </div>
-        <div className="flex-1 min-h-0 p-2">
-          <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
+        {/* Map — fluid fill, no fixed dimensions */}
+        <div className="flex-1 min-h-0 min-w-0 relative p-2">
+          <div className="w-full h-full">
+            <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
+          </div>
         </div>
       </div>
 
@@ -163,19 +166,21 @@ export default function DashboardPage() {
       </div>
 
       {/* Mobile content — full height, one panel at a time */}
-      <div className="flex-1 lg:hidden overflow-hidden min-h-0">
+      <div className="flex-1 lg:hidden overflow-hidden min-h-0 min-w-0">
         {mobileTab === "map" && (
-          <div className="h-full p-2">
-            <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
+          <div className="h-full w-full relative p-2">
+            <div className="w-full h-full">
+              <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
+            </div>
           </div>
         )}
         {mobileTab === "intake" && (
-          <div className="h-full" style={{ background: "var(--bg-card)" }}>
+          <div className="h-full glass">
             <IngestionFeed items={intake} />
           </div>
         )}
         {mobileTab === "swarm" && (
-          <div className="h-full" style={{ background: "var(--bg-card)" }}>
+          <div className="h-full glass">
             <SwarmLog entries={logs} />
           </div>
         )}

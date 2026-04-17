@@ -40,8 +40,10 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
   const [activeSeverities, setActiveSeverities] = useState<Set<Severity>>(new Set());
   const [clusteredOnly, setClusteredOnly] = useState(false);
   const [panicOnly, setPanicOnly] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   /* debounced search */
   useEffect(() => {
@@ -49,6 +51,17 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
     debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
+
+  /* close dropdown on outside click */
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   /* active filter count */
   const activeCount =
@@ -122,67 +135,31 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
 
   const filtered = applyFilters();
 
-  /* ── shared styles ──────────────────────────────────────────── */
-
-  const chipBase: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 4,
-    padding: "2px 8px",
-    borderRadius: 9999,
-    fontSize: 10,
-    fontFamily: "var(--font-mono, ui-monospace, monospace)",
-    cursor: "pointer",
-    transition: "all 120ms ease",
-    whiteSpace: "nowrap",
-    userSelect: "none",
-    lineHeight: "18px",
-    border: "1px solid",
-  };
-
-  const chipStyle = (active: boolean, color: string): React.CSSProperties => ({
-    ...chipBase,
-    background: active ? color : "transparent",
-    color: active ? "#fff" : color,
-    borderColor: active ? color : `${color}66`,
-    opacity: active ? 1 : 0.7,
-  });
-
-  const toggleStyle = (active: boolean): React.CSSProperties => ({
-    ...chipBase,
-    background: active ? "var(--accent-blue, #3b82f6)" : "transparent",
-    color: active ? "#fff" : "var(--fg-muted, #71717a)",
-    borderColor: active ? "var(--accent-blue, #3b82f6)" : "var(--border, #333)",
-  });
-
   /* ── render ─────────────────────────────────────────────────── */
 
   return (
     <div
-      className="flex items-center gap-2 px-3 shrink-0 overflow-x-auto"
+      className="flex items-center gap-3 px-4 shrink-0"
       style={{
         height: 44,
-        background: "var(--bg-card, #141414)",
-        borderBottom: "1px solid var(--border-light, #222)",
         fontFamily: "var(--font-mono, ui-monospace, monospace)",
       }}
     >
       {/* Search input */}
       <div
-        className="flex items-center gap-1.5 shrink-0"
+        className="flex items-center gap-1.5 flex-1"
         style={{
-          background: "var(--bg-surface, #1a1a1a)",
-          border: "1px solid var(--border, #333)",
-          borderRadius: 6,
-          padding: "0 8px",
-          height: 28,
-          minWidth: 160,
-          maxWidth: 220,
+          background: "var(--bg-surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          padding: "0 10px",
+          height: 32,
+          maxWidth: 280,
         }}
       >
         <svg
-          width="12" height="12" viewBox="0 0 24 24" fill="none"
-          stroke="var(--fg-muted, #71717a)" strokeWidth="2" strokeLinecap="round"
+          width="13" height="13" viewBox="0 0 24 24" fill="none"
+          stroke="var(--fg-muted)" strokeWidth="2" strokeLinecap="round"
         >
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -192,10 +169,9 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search events…"
-          className="flex-1 outline-none bg-transparent"
+          className="flex-1 outline-none bg-transparent text-xs"
           style={{
-            fontSize: 11,
-            color: "var(--fg-primary, #e5e5e5)",
+            color: "var(--fg-primary)",
             fontFamily: "inherit",
             minWidth: 0,
           }}
@@ -203,120 +179,243 @@ export function FilterBar({ events, onFilterChange }: FilterBarProps) {
         {search && (
           <button
             onClick={() => setSearch("")}
-            style={{ color: "var(--fg-muted, #71717a)", lineHeight: 1, fontSize: 14 }}
+            className="text-sm leading-none"
+            style={{ color: "var(--fg-muted)" }}
           >
             ×
           </button>
         )}
       </div>
 
-      {/* Separator */}
-      <div className="w-px h-5 shrink-0" style={{ background: "var(--border, #333)" }} />
+      {/* Filter dropdown */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-200 hover:brightness-110"
+          style={{
+            background: activeCount > 0 ? "var(--accent-blue)" : "var(--bg-surface)",
+            color: activeCount > 0 ? "#fff" : "var(--fg-secondary)",
+            border: `1px solid ${activeCount > 0 ? "var(--accent-blue)" : "var(--border)"}`,
+            boxShadow: activeCount > 0 ? "0 0 12px rgba(37,99,235,0.25)" : "none",
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+          Filter
+          {activeCount > 0 && (
+            <span
+              className="flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold"
+              style={{ background: "rgba(255,255,255,0.25)", color: "#fff" }}
+            >
+              {activeCount}
+            </span>
+          )}
+          <svg
+            width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+            className={`transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
 
-      {/* Domain chips */}
-      <div className="flex items-center gap-1 shrink-0">
-        {activeDomains.size > 0 && (
-          <button
-            onClick={() => setActiveDomains(new Set())}
+        {/* Dropdown panel */}
+        {dropdownOpen && (
+          <div
+            className="absolute left-0 z-50 mt-2 rounded-xl overflow-hidden"
             style={{
-              ...chipBase,
-              background: "transparent",
-              color: "var(--fg-muted, #71717a)",
-              borderColor: "var(--border, #333)",
-              fontSize: 9,
+              background: "rgba(0,0,0,0.88)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              width: 260,
             }}
           >
-            All
-          </button>
+            {/* Domain section */}
+            <div className="px-4 pt-4 pb-2">
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-gray-500">
+                Domain
+              </span>
+            </div>
+            <div className="px-2 pb-2 space-y-0.5">
+              {DOMAINS.map((d) => {
+                const active = activeDomains.has(d);
+                return (
+                  <button
+                    key={d}
+                    onClick={() => toggleDomain(d)}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-150"
+                    style={{
+                      background: active ? `${DOMAIN_COLORS[d]}18` : "transparent",
+                      color: active ? "#fff" : "rgba(255,255,255,0.6)",
+                    }}
+                  >
+                    {/* Custom checkbox */}
+                    <span
+                      className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
+                      style={{
+                        borderColor: active ? DOMAIN_COLORS[d] : "rgba(255,255,255,0.2)",
+                        background: active ? DOMAIN_COLORS[d] : "transparent",
+                      }}
+                    >
+                      {active && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </span>
+                    {/* Color dot */}
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DOMAIN_COLORS[d] }} />
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div className="mx-4 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+
+            {/* Severity section */}
+            <div className="px-4 pt-3 pb-2">
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-gray-500">
+                Severity
+              </span>
+            </div>
+            <div className="px-2 pb-2 space-y-0.5">
+              {SEVERITIES.map((s) => {
+                const active = activeSeverities.has(s);
+                return (
+                  <button
+                    key={s}
+                    onClick={() => toggleSeverity(s)}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono capitalize transition-all duration-150"
+                    style={{
+                      background: active ? `${SEVERITY_COLORS[s]}18` : "transparent",
+                      color: active ? "#fff" : "rgba(255,255,255,0.6)",
+                    }}
+                  >
+                    <span
+                      className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
+                      style={{
+                        borderColor: active ? SEVERITY_COLORS[s] : "rgba(255,255,255,0.2)",
+                        background: active ? SEVERITY_COLORS[s] : "transparent",
+                      }}
+                    >
+                      {active && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: SEVERITY_COLORS[s] }} />
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Divider */}
+            <div className="mx-4 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+
+            {/* Toggles section */}
+            <div className="px-4 pt-3 pb-2">
+              <span className="text-[9px] font-bold uppercase tracking-[0.25em] text-gray-500">
+                Flags
+              </span>
+            </div>
+            <div className="px-2 pb-3 space-y-0.5">
+              <button
+                onClick={() => setClusteredOnly(!clusteredOnly)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-150"
+                style={{
+                  background: clusteredOnly ? "rgba(168,85,247,0.12)" : "transparent",
+                  color: clusteredOnly ? "#fff" : "rgba(255,255,255,0.6)",
+                }}
+              >
+                <span
+                  className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
+                  style={{
+                    borderColor: clusteredOnly ? "#a855f7" : "rgba(255,255,255,0.2)",
+                    background: clusteredOnly ? "#a855f7" : "transparent",
+                  }}
+                >
+                  {clusteredOnly && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </span>
+                🔗 Clustered Only
+              </button>
+              <button
+                onClick={() => setPanicOnly(!panicOnly)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-150"
+                style={{
+                  background: panicOnly ? "rgba(239,68,68,0.12)" : "transparent",
+                  color: panicOnly ? "#fff" : "rgba(255,255,255,0.6)",
+                }}
+              >
+                <span
+                  className="flex items-center justify-center w-4 h-4 rounded border transition-all shrink-0"
+                  style={{
+                    borderColor: panicOnly ? "#ef4444" : "rgba(255,255,255,0.2)",
+                    background: panicOnly ? "#ef4444" : "transparent",
+                  }}
+                >
+                  {panicOnly && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </span>
+                🚨 Panic Only
+              </button>
+            </div>
+
+            {/* Footer: reset + count */}
+            {activeCount > 0 && (
+              <>
+                <div className="mx-4 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }} />
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    {activeCount} active
+                  </span>
+                  <button
+                    onClick={resetAll}
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider transition-colors hover:text-white"
+                    style={{ color: "rgba(255,255,255,0.5)" }}
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         )}
-        {DOMAINS.map((d) => (
-          <button
-            key={d}
-            onClick={() => toggleDomain(d)}
-            style={chipStyle(activeDomains.has(d), DOMAIN_COLORS[d])}
-          >
-            {d}
-          </button>
-        ))}
       </div>
-
-      {/* Separator */}
-      <div className="w-px h-5 shrink-0" style={{ background: "var(--border, #333)" }} />
-
-      {/* Severity chips */}
-      <div className="flex items-center gap-1 shrink-0">
-        {SEVERITIES.map((s) => (
-          <button
-            key={s}
-            onClick={() => toggleSeverity(s)}
-            style={chipStyle(activeSeverities.has(s), SEVERITY_COLORS[s])}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* Separator */}
-      <div className="w-px h-5 shrink-0" style={{ background: "var(--border, #333)" }} />
-
-      {/* Cluster toggle */}
-      <button onClick={() => setClusteredOnly(!clusteredOnly)} style={toggleStyle(clusteredOnly)}>
-        🔗 Clustered
-      </button>
-
-      {/* Panic toggle */}
-      <button onClick={() => setPanicOnly(!panicOnly)} style={toggleStyle(panicOnly)}>
-        🚨 Panic
-      </button>
 
       {/* Spacer */}
-      <div className="flex-1" />
+      <div className="flex-1 min-w-0" />
 
       {/* Results count */}
-      <span
-        className="shrink-0"
-        style={{ fontSize: 10, color: "var(--fg-muted, #71717a)", fontFamily: "inherit" }}
-      >
-        Showing {filtered.length} of {events.length}
+      <span className="shrink-0 text-[10px] font-bold font-mono uppercase tracking-[0.1em]"
+        style={{ color: "var(--fg-muted)" }}>
+        {filtered.length} / {events.length}
       </span>
 
-      {/* Active filter badge + reset */}
+      {/* Active filter badge + reset (inline) */}
       {activeCount > 0 && (
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minWidth: 18,
-              height: 18,
-              borderRadius: 9999,
-              fontSize: 10,
-              fontWeight: 600,
-              background: "var(--accent-blue, #3b82f6)",
-              color: "#fff",
-              padding: "0 5px",
-              fontFamily: "inherit",
-            }}
-          >
-            {activeCount}
-          </span>
-          <button
-            onClick={resetAll}
-            style={{
-              fontSize: 10,
-              color: "var(--fg-muted, #71717a)",
-              textDecoration: "underline",
-              textUnderlineOffset: 2,
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            Reset
-          </button>
-        </div>
+        <button
+          onClick={resetAll}
+          className="shrink-0 text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 rounded transition-all duration-200 hover:brightness-110"
+          style={{
+            background: "var(--accent-crimson-dim)",
+            color: "var(--accent-crimson)",
+          }}
+        >
+          ✕ Reset
+        </button>
       )}
     </div>
   );
