@@ -86,3 +86,30 @@ body {
 .feed-card {
   animation: slide-in 0.3s ease-out;
 }
+
+/* Invisible scrollbars — keep scroll, hide chrome */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Glassmorphism base — reusable frosted-glass panel */
+.glass {
+  background: rgba(250, 248, 245, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+/* Neon glow keyframes for critical cards */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.15); }
+  50% { box-shadow: 0 0 20px rgba(220, 38, 38, 0.35); }
+}
+.glow-critical {
+  animation: glow-pulse 2s ease-in-out infinite;
+  border-color: rgba(220, 38, 38, 0.35);
+}

@@ -82,11 +82,11 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-0">
       {/* Mobile tab bar */}
-      <div className="flex lg:hidden border-b shrink-0"
-        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+      <div className="flex lg:hidden border-b shrink-0 glass"
+        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
         {(["map", "intake", "swarm"] as const).map(tab => (
           <button key={tab} onClick={() => setMobileTab(tab)}
-            className="flex-1 py-2.5 text-[11px] font-mono uppercase tracking-wider text-center transition-colors border-b-2"
+            className="flex-1 py-2.5 text-[10px] font-bold font-mono uppercase tracking-[0.15em] text-center transition-all duration-300 border-b-2"
             style={{
               borderColor: mobileTab === tab ? "var(--accent-blue)" : "transparent",
               color: mobileTab === tab ? "var(--accent-blue)" : "var(--fg-muted)",
@@ -106,15 +106,15 @@ export default function DashboardPage() {
       </div>
 
       {/* Left: Ingestion Feed — desktop only */}
-      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-r flex-col overflow-hidden"
-        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-r flex-col overflow-hidden glass"
+        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
         <IngestionFeed items={intake} />
       </div>
 
       {/* Center: Map + Stats — desktop */}
       <div className="hidden lg:flex flex-1 flex-col min-w-0 min-h-0">
-        <div className="flex items-center gap-6 px-5 py-3 border-b shrink-0"
-          style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+        <div className="flex items-center gap-6 px-5 py-3 border-b shrink-0 glass"
+          style={{ borderColor: "rgba(0,0,0,0.06)" }}>
           <StatPill label="Active" value={stats.active} color="var(--accent-blue)" />
           <StatPill label="Critical" value={stats.critical} color="var(--accent-crimson)" />
           <StatPill label="Resolved" value={stats.resolved} color="var(--accent-green)" />
@@ -122,10 +122,11 @@ export default function DashboardPage() {
           <button
             onClick={handleTrigger}
             disabled={triggering}
-            className="ml-2 px-4 py-2 rounded-md text-xs font-mono font-semibold transition-all disabled:opacity-50"
+            className="ml-2 px-4 py-2 rounded-md text-xs font-mono font-bold uppercase tracking-[0.1em] transition-all duration-300 disabled:opacity-50 hover:scale-[1.03]"
             style={{
               background: triggering ? "var(--bg-elevated)" : "var(--accent-blue)",
               color: triggering ? "var(--fg-muted)" : "#fff",
+              boxShadow: triggering ? "none" : "0 0 15px rgba(37,99,235,0.35)",
             }}
           >
             {triggering ? "⏳ Processing…" : "⚡ Trigger Analysis"}
@@ -156,8 +157,8 @@ export default function DashboardPage() {
       </div>
 
       {/* Right: Swarm Log — desktop only */}
-      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-l flex-col overflow-hidden"
-        style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+      <div className="hidden lg:flex w-1/4 max-w-sm min-w-[260px] shrink-0 border-l flex-col overflow-hidden glass"
+        style={{ borderColor: "rgba(0,0,0,0.06)" }}>
         <SwarmLog entries={logs} />
       </div>
 
@@ -191,9 +192,9 @@ export default function DashboardPage() {
 function StatPill({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
     <div className="flex items-center gap-2 shrink-0">
-      <span className="w-2 h-2 rounded-full" style={{ background: color }} />
-      <span className="text-xs font-mono uppercase" style={{ color: "var(--fg-muted)" }}>{label}</span>
-      <span className="text-base font-semibold tabular-nums" style={{ color }}>{value}</span>
+      <span className="w-2 h-2 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
+      <span className="text-[10px] font-bold font-mono uppercase tracking-[0.15em]" style={{ color: "var(--fg-muted)" }}>{label}</span>
+      <span className="text-lg font-medium tracking-tight tabular-nums" style={{ color }}>{value}</span>
     </div>
   );
 }

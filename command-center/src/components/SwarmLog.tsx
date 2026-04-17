@@ -20,7 +20,7 @@ export function SwarmLog({ entries }: SwarmLogProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b"
         style={{ borderColor: "var(--border)" }}>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-mono uppercase tracking-widest"
+          <span className="text-[10px] font-bold font-mono uppercase tracking-[0.2em]"
             style={{ color: "var(--fg-muted)" }}>
             Swarm Log
           </span>
@@ -29,17 +29,19 @@ export function SwarmLog({ entries }: SwarmLogProps) {
             {entries.length}
           </span>
         </div>
-        <span className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>⧉ brain</span>
+        <span className="text-[10px] font-bold uppercase tracking-[0.15em] font-mono" style={{ color: "var(--fg-muted)" }}>⧉ brain</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+      <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-3 space-y-2">
         {entries.map((entry) => {
           const style = TYPE_STYLES[entry.type];
+          const isEscalation = entry.type === "escalation";
           return (
-            <div key={entry.id} className="feed-card px-3.5 py-3 rounded-lg break-words"
-              style={{ background: "var(--bg-elevated)" }}>
+            <div key={entry.id}
+              className={`feed-card px-3.5 py-3 rounded-lg break-words transition-all duration-300 hover:-translate-y-0.5 hover:brightness-[1.02] cursor-pointer ${isEscalation ? "glow-critical" : ""}`}
+              style={{ background: "var(--bg-elevated)", borderColor: isEscalation ? "rgba(220,38,38,0.35)" : "transparent", border: isEscalation ? "1px solid rgba(220,38,38,0.35)" : "none" }}>
               <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded"
+                <span className="text-[10px] font-mono font-bold uppercase tracking-[0.1em] px-1.5 py-0.5 rounded"
                   style={{ background: `${style.color}22`, color: style.color }}>
                   {style.prefix}
                 </span>

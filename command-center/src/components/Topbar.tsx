@@ -14,8 +14,8 @@ export function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
 
   return (
     <header
-      className="h-12 flex items-center justify-between px-5 border-b shrink-0"
-      style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}
+      className="glass h-12 flex items-center justify-between px-5 border-b shrink-0"
+      style={{ borderColor: "rgba(0,0,0,0.06)" }}
     >
       <div className="flex items-center gap-3">
         {/* Mobile menu button */}
@@ -28,10 +28,10 @@ export function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
             <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
-        <h1 className="text-sm font-semibold uppercase tracking-wider" style={{ color: "var(--fg-secondary)" }}>
+        <h1 className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "var(--fg-muted)" }}>
           Command Center
         </h1>
-        <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded font-mono"
+        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] px-2.5 py-1 rounded font-mono"
           style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping"
@@ -52,12 +52,12 @@ export function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
         <div className="hidden sm:block w-px h-5" style={{ background: "var(--border)" }} />
 
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline text-xs font-mono" style={{ color: "var(--fg-muted)" }}>
+          <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.15em] font-mono" style={{ color: "var(--fg-muted)" }}>
             4 agents
           </span>
           <span className="flex gap-1">
             {[1, 2, 3, 4].map(i => (
-              <span key={i} className="w-2 h-2 rounded-full" style={{ background: "var(--accent-green)" }} />
+              <span key={i} className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--accent-green)", boxShadow: "0 0 8px rgba(22,163,74,0.6)" }} />
             ))}
           </span>
         </div>
