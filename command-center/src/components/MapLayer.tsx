@@ -38,15 +38,19 @@ type MapLibreType = typeof import("maplibre-gl");
 
 interface MapLayerProps {
   events: PulseEvent[];
+  onEventClick?: (event: PulseEvent) => void;
 }
 
-export function MapLayer({ events }: MapLayerProps) {
+export function MapLayer({ events, onEventClick }: MapLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mlRef = useRef<MapLibreType | null>(null);
   const readyRef = useRef(false);
   const eventsRef = useRef<PulseEvent[]>(events);
   eventsRef.current = events;
+  const onEventClickRef = useRef(onEventClick);
+  onEventClickRef.current = onEventClick;
+  const pulseRef = useRef<number | null>(null);
 
   const syncMarkers = useCallback(() => {
     const map = mapRef.current;
@@ -67,6 +71,11 @@ export function MapLayer({ events }: MapLayerProps) {
         domain: e.domain,
         status: e.status,
         officer: e.assigned_officer?.officer_id ?? "",
+        cluster_found: e.cluster_found ?? false,
+        cluster_size: e.cluster_size ?? 0,
+        citizen_name: e.citizen_name ?? "",
+        panic_flag: e.panic_flag ?? false,
+        sentiment_score: e.sentiment_score ?? null,
       },
     }));
 
@@ -97,11 +106,62 @@ export function MapLayer({ events }: MapLayerProps) {
         properties: { id: e.event_id },
       }));
 
+    // Build GeoJSON for cluster ring overlay
+    const clusterFeatures: GeoJSON.Feature[] = currentEvents
+      .filter((e) => e.cluster_found)
+      .map((e) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [e.coordinates.lng, e.coordinates.lat] },
+        properties: {
+          id: e.event_id,
+          cluster_id: e.cluster_id ?? "",
+          cluster_size: e.cluster_size ?? 1,
+        },
+      }));
+
+    // Build GeoJSON for heatmap (all events, weighted by severity)
+    const heatFeatures: GeoJSON.Feature[] = currentEvents.map((e) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [e.coordinates.lng, e.coordinates.lat] },
+      properties: {
+        weight: e.severity === "critical" ? 1.0 : e.severity === "high" ? 0.6 : 0.3,
+      },
+    }));
+
     const eventGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: eventFeatures };
     const officerGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: officerFeatures };
     const lineGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: lineFeatures };
+    const clusterGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: clusterFeatures };
+    const heatGeoJSON: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: heatFeatures };
 
-    // Update or create sources
+    // ── Heatmap source & layer (below everything) ──
+    const heatSrc = map.getSource("heatmap") as maplibregl.GeoJSONSource | undefined;
+    if (heatSrc) {
+      heatSrc.setData(heatGeoJSON);
+    } else {
+      map.addSource("heatmap", { type: "geojson", data: heatGeoJSON });
+      map.addLayer({
+        id: "heatmap-layer",
+        type: "heatmap",
+        source: "heatmap",
+        paint: {
+          "heatmap-weight": ["get", "weight"],
+          "heatmap-intensity": 1,
+          "heatmap-radius": 28,
+          "heatmap-opacity": 0.3,
+          "heatmap-color": [
+            "interpolate", ["linear"], ["heatmap-density"],
+            0,   "rgba(0,0,0,0)",
+            0.2, "rgba(34,197,94,0.4)",
+            0.4, "rgba(234,179,8,0.5)",
+            0.6, "rgba(249,115,22,0.6)",
+            1,   "rgba(239,68,68,0.8)",
+          ],
+        },
+      });
+    }
+
+    // ── Event source & layers ──
     const eventSrc = map.getSource("events") as maplibregl.GeoJSONSource | undefined;
     if (eventSrc) {
       eventSrc.setData(eventGeoJSON);
@@ -132,6 +192,59 @@ export function MapLayer({ events }: MapLayerProps) {
           "circle-opacity": 0.12,
         },
       });
+    }
+
+    // ── Cluster ring source & layer ──
+    const clusterSrc = map.getSource("cluster-rings") as maplibregl.GeoJSONSource | undefined;
+    if (clusterSrc) {
+      clusterSrc.setData(clusterGeoJSON);
+    } else {
+      map.addSource("cluster-rings", { type: "geojson", data: clusterGeoJSON });
+      map.addLayer(
+        {
+          id: "cluster-ring-layer",
+          type: "circle",
+          source: "cluster-rings",
+          paint: {
+            "circle-radius": 22,
+            "circle-color": "transparent",
+            "circle-stroke-width": 2.5,
+            "circle-stroke-color": "#a855f7",
+            "circle-stroke-opacity": 0.6,
+          },
+        },
+        "events-circle" // render below event dots
+      );
+      map.addLayer(
+        {
+          id: "cluster-ring-fill",
+          type: "circle",
+          source: "cluster-rings",
+          paint: {
+            "circle-radius": 22,
+            "circle-color": "#a855f7",
+            "circle-opacity": 0.08,
+          },
+        },
+        "cluster-ring-layer" // below the ring stroke
+      );
+
+      // Pulse animation for cluster rings
+      let opacity = 0.08;
+      let rising = true;
+      const animate = () => {
+        if (!mapRef.current || !readyRef.current) return;
+        opacity += rising ? 0.004 : -0.004;
+        if (opacity >= 0.18) rising = false;
+        if (opacity <= 0.04) rising = true;
+        try {
+          map.setPaintProperty("cluster-ring-fill", "circle-opacity", opacity);
+          map.setPaintProperty("cluster-ring-layer", "circle-stroke-opacity", 0.3 + opacity * 2);
+        } catch { /* layer may be removed */ }
+        pulseRef.current = requestAnimationFrame(animate);
+      };
+      if (pulseRef.current) cancelAnimationFrame(pulseRef.current);
+      pulseRef.current = requestAnimationFrame(animate);
     }
 
     const officerSrc = map.getSource("officers") as maplibregl.GeoJSONSource | undefined;
@@ -203,19 +316,46 @@ export function MapLayer({ events }: MapLayerProps) {
         syncMarkers();
       });
 
-      // Click popup for events
+      // Enhanced click popup for events
       map.on("click", "events-circle", (e) => {
         if (!e.features?.[0]) return;
         const props = e.features[0].properties;
         const coords = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
 
-        new ml.Popup({ offset: 12, closeButton: false, maxWidth: "220px" })
+        // Fire onEventClick callback
+        const matchedEvent = eventsRef.current.find((ev) => ev.event_id === props.id);
+        if (matchedEvent) onEventClickRef.current?.(matchedEvent);
+
+        const severityColors: Record<string, string> = {
+          critical: "#dc2626", high: "#f59e0b", standard: "#22c55e",
+        };
+        const sevColor = severityColors[props.severity] ?? "#6b7280";
+        const clusterBadge = props.cluster_found === true || props.cluster_found === "true"
+          ? `<span style="background:#ede9fe;color:#7c3aed;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600;">🔗 Cluster of ${props.cluster_size ?? "N"}</span> `
+          : "";
+        const panicBadge = props.panic_flag === true || props.panic_flag === "true"
+          ? `<span style="background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600;">🚨 PANIC</span> `
+          : "";
+        const impactLine = props.sentiment_score != null
+          ? `<div style="color:#71717a;font-size:9px;margin-top:3px;">Impact score: ${Number(props.sentiment_score).toFixed(2)}</div>`
+          : "";
+
+        new ml.Popup({ offset: 14, closeButton: false, maxWidth: "260px" })
           .setLngLat(coords)
           .setHTML(
-            `<div style="font-family:system-ui;font-size:12px;">
-              <div style="font-weight:600;margin-bottom:4px;color:#1e1e1e;">${props.summary}</div>
-              <div style="color:#5c5856;font-size:10px;">${props.domain} · ${String(props.severity).toUpperCase()}</div>
-              ${props.officer ? `<div style="color:#2563eb;font-size:10px;margin-top:4px;">→ ${props.officer}</div>` : ""}
+            `<div style="font-family:system-ui;font-size:12px;line-height:1.5;">
+              <div style="font-weight:600;margin-bottom:4px;color:#1c1c1e;">${props.summary}</div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
+                <span style="background:#f4f4f5;color:#3f3f46;padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:500;">${props.domain}</span>
+                <span style="background:${sevColor}15;color:${sevColor};padding:1px 6px;border-radius:9999px;font-size:9px;font-weight:600;text-transform:uppercase;">${props.severity}</span>
+                ${clusterBadge}${panicBadge}
+              </div>
+              ${props.citizen_name ? `<div style="color:#52525b;font-size:10px;">👤 ${props.citizen_name}</div>` : ""}
+              ${impactLine}
+              ${props.officer ? `<div style="color:#2563eb;font-size:10px;margin-top:3px;">→ ${props.officer}</div>` : ""}
+              <div style="margin-top:6px;text-align:right;">
+                <span style="color:#a855f7;font-size:10px;font-weight:500;cursor:pointer;">View Details →</span>
+              </div>
             </div>`
           )
           .addTo(map);
@@ -232,6 +372,7 @@ export function MapLayer({ events }: MapLayerProps) {
 
     return () => {
       cancelled = true;
+      if (pulseRef.current) cancelAnimationFrame(pulseRef.current);
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;

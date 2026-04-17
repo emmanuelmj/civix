@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { MapLayer } from "@/components/MapLayer";
 import { IngestionFeed } from "@/components/IngestionFeed";
 import { SwarmLog } from "@/components/SwarmLog";
+import { GrievanceDetail } from "@/components/GrievanceDetail";
+import { AnalyticsView } from "@/components/AnalyticsView";
+import { FilterBar } from "@/components/FilterBar";
+import { AgentTrace } from "@/components/AgentTrace";
 import { usePulseStream, triggerAnalysis, fetchPineconeStatus, triggerRescan } from "@/lib/socket";
 import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, PineconeStatus } from "@/lib/types";
 import { useDashboard } from "@/lib/dashboard-context";
@@ -15,6 +19,8 @@ export default function DashboardPage() {
   const [mobileTab, setMobileTab] = useState<"map" | "intake" | "swarm">("map");
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState("");
+  const [selectedEvent, setSelectedEvent] = useState<PulseEvent | null>(null);
+  const [filteredEvents, setFilteredEvents] = useState<PulseEvent[]>([]);
 
   const handleTrigger = async () => {
     setTriggering(true);
@@ -33,6 +39,7 @@ export default function DashboardPage() {
   }, [events]);
 
   const activeEvents = events.filter(e => e.status !== "RESOLVED");
+  const displayEvents = filteredEvents.length > 0 || events.length === 0 ? filteredEvents : activeEvents;
 
   // Sidebar tab views
   if (activeTab === "Intake Feed") {
@@ -137,19 +144,14 @@ export default function DashboardPage() {
               }}>
               {status === "connected" ? "● LIVE" : status === "connecting" ? "◌ CONNECTING" : status === "disconnected" ? "✕ OFFLINE" : "↻ RECONNECTING"}
             </span>
-            {(["Municipal", "Water", "Electricity", "Traffic", "Construction", "Emergency"] as const).map(d => {
-              const count = events.filter(e => e.domain === d && e.status !== "RESOLVED").length;
-              return (
-                <span key={d} className="text-[10px] font-mono px-2 py-0.5 rounded"
-                  style={{ background: "var(--bg-elevated)", color: "var(--fg-muted)" }}>
-                  {d.slice(0, 5)} {count}
-                </span>
-              );
-            })}
           </div>
         </div>
+        {/* Smart Filter Bar */}
+        <div className="shrink-0 border-b" style={{ borderColor: "var(--border-light)" }}>
+          <FilterBar events={activeEvents} onFilterChange={setFilteredEvents} />
+        </div>
         <div className="flex-1 min-h-0 p-2">
-          <MapLayer events={activeEvents} />
+          <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
         </div>
       </div>
 
@@ -163,7 +165,7 @@ export default function DashboardPage() {
       <div className="flex-1 lg:hidden overflow-hidden min-h-0">
         {mobileTab === "map" && (
           <div className="h-full p-2">
-            <MapLayer events={activeEvents} />
+            <MapLayer events={displayEvents} onEventClick={setSelectedEvent} />
           </div>
         )}
         {mobileTab === "intake" && (
@@ -177,6 +179,11 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Grievance Detail Slide-out Panel */}
+      {selectedEvent && (
+        <GrievanceDetail event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      )}
     </div>
   );
 }
@@ -187,85 +194,6 @@ function StatPill({ label, value, color }: { label: string; value: number | stri
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
       <span className="text-[10px] font-mono uppercase" style={{ color: "var(--fg-muted)" }}>{label}</span>
       <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
-    </div>
-  );
-}
-
-function AnalyticsView({ events, logs, intake }: { events: PulseEvent[]; logs: SwarmLogEntry[]; intake: IntakeFeedItem[] }) {
-  const total = events.length;
-  const critical = events.filter(e => e.severity === "critical").length;
-  const high = events.filter(e => e.severity === "high").length;
-  const resolved = events.filter(e => e.status === "RESOLVED").length;
-  const dispatched = events.filter(e => e.assigned_officer).length;
-  const avgScore = total > 0 ? Math.round(events.reduce((s, e) => s + (parseInt(String(e.severity_color === "#FF0000" ? "80" : e.severity_color === "#FFA500" ? "50" : "25")), 0), 0) / total) : 0;
-
-  const domainCounts = events.reduce<Record<string, number>>((acc, e) => {
-    acc[e.domain] = (acc[e.domain] || 0) + 1;
-    return acc;
-  }, {});
-
-  const channelCounts = intake.reduce<Record<string, number>>((acc, i) => {
-    acc[i.channel] = (acc[i.channel] || 0) + 1;
-    return acc;
-  }, {});
-
-  return (
-    <div className="h-full overflow-y-auto p-6 space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <span className="text-lg" style={{ color: "var(--fg-primary)" }}>◔</span>
-        <h2 className="text-base font-semibold" style={{ color: "var(--fg-primary)" }}>Analytics</h2>
-        <span className="text-[10px] font-mono px-2 py-0.5 rounded" style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}>Live</span>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total Events" value={total} color="var(--accent-blue)" />
-        <KpiCard label="Critical" value={critical} color="var(--accent-crimson)" />
-        <KpiCard label="Dispatched" value={dispatched} color="var(--accent-blue)" />
-        <KpiCard label="Resolved" value={resolved} color="var(--accent-green)" />
-      </div>
-
-      {/* Domain breakdown */}
-      <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
-        <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>Events by Domain</h3>
-        <div className="space-y-2">
-          {Object.entries(domainCounts).sort((a, b) => b[1] - a[1]).map(([domain, count]) => (
-            <div key={domain} className="flex items-center gap-3">
-              <span className="text-[12px] font-medium w-28" style={{ color: "var(--fg-secondary)" }}>{domain}</span>
-              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-elevated)" }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${(count / total) * 100}%`, background: "var(--accent-blue)" }} />
-              </div>
-              <span className="text-[12px] font-mono tabular-nums w-8 text-right" style={{ color: "var(--fg-muted)" }}>{count}</span>
-            </div>
-          ))}
-          {Object.keys(domainCounts).length === 0 && (
-            <p className="text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>No events yet — trigger an analysis to see data.</p>
-          )}
-        </div>
-      </div>
-
-      {/* Intake channels */}
-      <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
-        <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>Intake by Channel</h3>
-        <div className="flex flex-wrap gap-3">
-          {Object.entries(channelCounts).map(([ch, count]) => (
-            <div key={ch} className="flex items-center gap-2 px-3 py-2 rounded-md" style={{ background: "var(--bg-elevated)" }}>
-              <span className="text-[12px] font-mono uppercase" style={{ color: "var(--fg-secondary)" }}>{ch}</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--accent-blue)" }}>{count}</span>
-            </div>
-          ))}
-          {Object.keys(channelCounts).length === 0 && (
-            <p className="text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>No intake items yet.</p>
-          )}
-        </div>
-      </div>
-
-      {/* Summary stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <KpiCard label="Swarm Logs" value={logs.length} color="var(--accent-amber)" />
-        <KpiCard label="Intake Items" value={intake.length} color="var(--fg-secondary)" />
-        <KpiCard label="Resolution Rate" value={total > 0 ? `${Math.round((resolved / total) * 100)}%` : "—"} color="var(--accent-green)" />
-      </div>
     </div>
   );
 }
@@ -357,7 +285,7 @@ function SettingsView({ status, events, logs, intake }: { status: string; events
   const configItems = [
     { label: "Backend API", value: "localhost:8000", ok: true },
     { label: "WebSocket", value: status === "connected" ? "Connected" : status, ok: status === "connected" },
-    { label: "LLM Provider", value: "OpenRouter (Nemotron 120B)", ok: true },
+    { label: "LLM Provider", value: "GitHub Models (GPT-4.1)", ok: true },
     { label: "Pinecone", value: pcStatus?.pinecone?.connected ? `Connected (${pcStatus.pinecone.total_vectors} vectors)` : "Disconnected", ok: !!pcStatus?.pinecone?.connected },
     { label: "Watcher", value: pcStatus?.watcher?.running ? `Polling every ${pcStatus.watcher.poll_interval_seconds}s` : "Not running", ok: !!pcStatus?.watcher?.running },
     { label: "LangSmith", value: "Tracing enabled", ok: true },
@@ -429,7 +357,7 @@ function SettingsView({ status, events, logs, intake }: { status: string; events
         <div className="space-y-1.5 text-[11px] font-mono" style={{ color: "var(--fg-secondary)" }}>
           <p>Pipeline: Auditor → Priority → Cluster Amplifier → Dispatch</p>
           <p>Graph Engine: LangGraph (4-node StateGraph)</p>
-          <p>Model: nvidia/nemotron-3-super-120b-a12b:free via OpenRouter</p>
+          <p>Model: openai/gpt-4.1 via GitHub Models API</p>
           <p>Vector Search: Pinecone (cosine similarity, serverless)</p>
           <p>Tracing: LangSmith (civix-pulse project)</p>
           <p>Webhook: POST /api/v1/webhook/new-event</p>
@@ -581,8 +509,8 @@ function AgentCanvasView({ events, logs, status }: { events: PulseEvent[]; logs:
         </div>
       </div>
 
-      {/* Agent Activity Feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Agent Activity + Health + Event Traces */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Recent agent actions */}
         <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
           <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>
@@ -625,9 +553,9 @@ function AgentCanvasView({ events, logs, status }: { events: PulseEvent[]; logs:
           <div className="space-y-3">
             {[
               { name: "Systemic Auditor", desc: "Pinecone vector similarity", logs: analysisLogs.length, color: "var(--accent-amber)" },
-              { name: "Priority Agent", desc: "OpenRouter LLM scoring", logs: analysisLogs.length, color: "var(--accent-crimson)" },
-              { name: "Dispatch Agent", desc: "Spatial officer matching", logs: dispatchLogs.length, color: "var(--accent-blue)" },
-              { name: "Verification Agent", desc: "Photo + feedback loop", logs: verifyLogs.length, color: "var(--accent-green)" },
+              { name: "Priority Agent", desc: "GitHub Models GPT-4.1", logs: analysisLogs.length, color: "var(--accent-crimson)" },
+              { name: "Cluster Amplifier", desc: "Systemic pattern boost", logs: events.filter(e => e.cluster_found).length, color: "#a855f7" },
+              { name: "Dispatch Agent", desc: "Haversine spatial matching", logs: dispatchLogs.length, color: "var(--accent-blue)" },
             ].map(agent => (
               <div key={agent.name} className="flex items-center gap-3">
                 <span className="w-2 h-2 rounded-full shrink-0" style={{
@@ -644,6 +572,20 @@ function AgentCanvasView({ events, logs, status }: { events: PulseEvent[]; logs:
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Recent Event Traces */}
+        <div className="rounded-lg border p-4" style={{ background: "var(--bg-card)", borderColor: "var(--border-light)" }}>
+          <h3 className="text-[11px] font-mono uppercase tracking-wider mb-3" style={{ color: "var(--fg-muted)" }}>
+            Latest Event Trace
+          </h3>
+          {events.length > 0 ? (
+            <AgentTrace event={events[0]} logs={logs} compact />
+          ) : (
+            <p className="text-[11px] font-mono py-4 text-center" style={{ color: "var(--fg-muted)" }}>
+              No events processed yet.
+            </p>
+          )}
         </div>
       </div>
     </div>
