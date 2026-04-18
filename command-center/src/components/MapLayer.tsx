@@ -82,6 +82,7 @@ export function MapLayer({ events, officers = [], onEventClick, onViewDetails }:
         citizen_name: e.citizen_name ?? "",
         panic_flag: e.panic_flag ?? false,
         sentiment_score: e.sentiment_score ?? null,
+        impact_score: e.impact_score ?? null,
       },
     }));
 
@@ -128,9 +129,9 @@ export function MapLayer({ events, officers = [], onEventClick, onViewDetails }:
       }
     }
 
-    // Build GeoJSON for dispatch lines
+    // Build GeoJSON for dispatch lines (skip officers with invalid 0,0 coordinates)
     const lineFeatures: GeoJSON.Feature[] = currentEvents
-      .filter((e) => e.assigned_officer)
+      .filter((e) => e.assigned_officer && e.assigned_officer.current_lat !== 0 && e.assigned_officer.current_lng !== 0)
       .map((e) => ({
         type: "Feature",
         geometry: {
@@ -373,9 +374,11 @@ export function MapLayer({ events, officers = [], onEventClick, onViewDetails }:
         const panicBadge = props.panic_flag === true || props.panic_flag === "true"
           ? `<span style="background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600;">🚨 PANIC</span> `
           : "";
-        const impactLine = props.sentiment_score != null
-          ? `<div style="color:#71717a;font-size:12px;margin-top:4px;">Impact score: ${Number(props.sentiment_score).toFixed(2)}</div>`
-          : "";
+        const impactLine = props.impact_score != null
+          ? `<div style="color:#71717a;font-size:12px;margin-top:4px;">Impact score: ${props.impact_score}/100</div>`
+          : props.sentiment_score != null
+            ? `<div style="color:#71717a;font-size:12px;margin-top:4px;">Sentiment: ${Number(props.sentiment_score).toFixed(1)}/10</div>`
+            : "";
 
         const popup = new ml.Popup({ offset: 14, closeButton: false, maxWidth: "320px" })
           .setLngLat(coords)

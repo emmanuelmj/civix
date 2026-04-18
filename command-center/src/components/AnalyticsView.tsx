@@ -159,7 +159,7 @@ export function AnalyticsView({
     const critical = events.filter((e) => e.severity === "critical" && e.status !== "RESOLVED").length;
     const avgImpact =
       total > 0
-        ? events.reduce((s, e) => s + (e.sentiment_score ?? 0.5), 0) / total
+        ? events.reduce((s, e) => s + (e.impact_score ?? e.sentiment_score ?? 0), 0) / total
         : 0;
     const resolved = events.filter((e) => e.status === "RESOLVED").length;
     const resolutionRate = total > 0 ? (resolved / total) * 100 : 0;

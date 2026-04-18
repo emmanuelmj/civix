@@ -3,7 +3,7 @@
  * Connects the mobile app to the Civix-Pulse backend.
  */
 
-// Point to local backend
+// Point to local backend — use LAN IP so Expo Go on phone can reach it
 const BASE_URL = 'http://localhost:8000';
 const LOCAL_URL = 'http://localhost:8000';
 

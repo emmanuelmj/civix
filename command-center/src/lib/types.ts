@@ -37,6 +37,7 @@ export interface PulseEvent {
   issue_type?: string;
   panic_flag?: boolean;
   sentiment_score?: number;
+  impact_score?: number;
 }
 
 export interface SwarmLogEntry {

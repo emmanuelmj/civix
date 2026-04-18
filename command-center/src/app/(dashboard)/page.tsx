@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { MapLayer } from "@/components/MapLayer";
 import { IngestionFeed } from "@/components/IngestionFeed";
 import { SwarmLog } from "@/components/SwarmLog";
@@ -24,7 +24,11 @@ export default function DashboardPage() {
   const [triggering, setTriggering] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<PulseEvent | null>(null);
-  const [filteredEvents, setFilteredEvents] = useState<PulseEvent[]>([]);
+  const [filteredEvents, setFilteredEvents] = useState<PulseEvent[] | null>(null);
+
+  const handleFilterChange = useCallback((filtered: PulseEvent[]) => {
+    setFilteredEvents(filtered);
+  }, []);
 
   const handleTrigger = async () => {
     setTriggering(true);
@@ -52,7 +56,8 @@ export default function DashboardPage() {
   }, [events]);
 
   const activeEvents = events.filter(e => e.status !== "RESOLVED");
-  const displayEvents = filteredEvents.length > 0 || events.length === 0 ? filteredEvents : activeEvents;
+  // null = FilterBar hasn't initialized yet → show all; otherwise respect filter results (even if empty)
+  const displayEvents = filteredEvents ?? activeEvents;
 
   // Sidebar tab views
   if (activeTab === "Intake Feed") {
@@ -174,7 +179,7 @@ export default function DashboardPage() {
         </div>
         {/* Smart Filter Bar */}
         <div className="shrink-0 border-b glass">
-          <FilterBar events={activeEvents} onFilterChange={setFilteredEvents} />
+          <FilterBar events={activeEvents} onFilterChange={handleFilterChange} />
         </div>
         {/* Map — fluid fill */}
         <div className="flex-1 min-h-0 relative">

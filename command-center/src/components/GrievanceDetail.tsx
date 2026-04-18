@@ -94,9 +94,9 @@ export function GrievanceDetail({ event, onClose }: GrievanceDetailProps) {
   const sev = SEVERITY_MAP[event.severity];
   const domainColor = DOMAIN_COLOR[event.domain];
 
-  // Derive an impact score from severity for the visual bar
-  const impactScore =
-    event.severity === "critical" ? 92 : event.severity === "high" ? 68 : 35;
+  // Use real impact score from backend, fall back to severity-based estimate
+  const impactScore = event.impact_score
+    ?? (event.severity === "critical" ? 92 : event.severity === "high" ? 68 : 35);
 
   // Close on Escape key
   useEffect(() => {

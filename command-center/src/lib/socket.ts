@@ -13,6 +13,20 @@ const CONNECT_TIMEOUT = 5000;
 
 // ── Backend payload mappers ────────────────────────────────────────
 
+/** Normalize backend domains (UPPERCASE) → frontend TitleCase */
+function normalizeDomain(raw: string | undefined): PulseEvent["domain"] {
+  const DOMAIN_MAP: Record<string, PulseEvent["domain"]> = {
+    MUNICIPAL: "Municipal",
+    TRAFFIC: "Traffic",
+    WATER: "Water",
+    ELECTRICITY: "Electricity",
+    CONSTRUCTION: "Construction",
+    EMERGENCY: "Emergency",
+  };
+  if (!raw) return "Municipal";
+  return DOMAIN_MAP[raw.toUpperCase()] ?? (raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()) as PulseEvent["domain"];
+}
+
 function colorToSeverity(hex: string): PulseEvent["severity"] {
   const c = hex.toLowerCase();
   if (c === "#ff0000" || c.includes("dc2626")) return "critical";
@@ -33,7 +47,7 @@ function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
     coordinates: coords || { lat: 17.385, lng: 78.4867 },
     severity_color: severityColor,
     severity: colorToSeverity(severityColor),
-    domain: ((pe.category as string) || "Municipal") as PulseEvent["domain"],
+    domain: normalizeDomain(pe.category as string),
     summary: (pe.summary as string) || (pe.category as string) || "New grievance event",
     assigned_officer: off
       ? {
@@ -56,6 +70,7 @@ function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
     issue_type: pe.issue_type as string | undefined,
     panic_flag: pe.panic_flag as boolean | undefined,
     sentiment_score: pe.sentiment_score as number | undefined,
+    impact_score: pe.impact_score as number | undefined,
   };
 }
 
@@ -76,7 +91,7 @@ function mapGenericEvent(raw: Record<string, unknown>): PulseEvent {
     severity: raw.severity
       ? (raw.severity as PulseEvent["severity"])
       : colorToSeverity(severityColor),
-    domain: (raw.domain as PulseEvent["domain"]) || "Municipal",
+    domain: normalizeDomain(raw.domain as string),
     summary: (raw.summary as string) || (raw.log_message as string) || "New event",
     assigned_officer: officer,
     log_message: (raw.log_message as string) || "",
@@ -279,12 +294,41 @@ export function usePulseStream(): UsePulseStreamReturn {
     // Load existing data from PostgreSQL on mount
     if (!bootstrapDone.current) {
       bootstrapDone.current = true;
-      fetchExistingEvents().then(({ events: dbEvents, intake: dbIntake }) => {
+
+      // Fetch both officers and events, then enrich officer data on events
+      Promise.all([
+        fetchOfficersFromDb(),
+        fetchExistingEvents(),
+      ]).then(([dbOfficers, { events: dbEvents, intake: dbIntake }]) => {
         if (!mountedRef.current) return;
-        if (dbEvents.length > 0) {
+
+        // Build officer lookup for coordinate enrichment
+        const officerLookup = new Map(dbOfficers.map((o) => [o.officer_id, o]));
+
+        // Enrich events that have assigned_officer_id but missing coords
+        const enrichedEvents = dbEvents.map((ev) => {
+          if (ev.assigned_officer && (ev.assigned_officer.current_lat === 0 || ev.assigned_officer.current_lng === 0)) {
+            const real = officerLookup.get(ev.assigned_officer.officer_id);
+            if (real) {
+              return {
+                ...ev,
+                assigned_officer: {
+                  ...ev.assigned_officer,
+                  name: real.name ?? ev.assigned_officer.name,
+                  current_lat: real.current_lat,
+                  current_lng: real.current_lng,
+                  skills: real.skills,
+                },
+              };
+            }
+          }
+          return ev;
+        });
+
+        if (enrichedEvents.length > 0) {
           setEvents((prev) => {
             const existingIds = new Set(prev.map((e) => e.event_id));
-            const newOnes = dbEvents.filter((e) => !existingIds.has(e.event_id));
+            const newOnes = enrichedEvents.filter((e) => !existingIds.has(e.event_id));
             return [...prev, ...newOnes].slice(0, MAX_ITEMS);
           });
         }
@@ -295,9 +339,6 @@ export function usePulseStream(): UsePulseStreamReturn {
             return [...prev, ...newOnes].slice(0, MAX_ITEMS);
           });
         }
-      });
-      fetchOfficersFromDb().then((dbOfficers) => {
-        if (!mountedRef.current) return;
         if (dbOfficers.length > 0) setOfficers(dbOfficers);
       });
     }
@@ -329,7 +370,7 @@ function mapDbEventToPulseEvent(dbEvent: Record<string, unknown>): PulseEvent {
     },
     severity_color: severityColor,
     severity: colorToSeverity(severityColor),
-    domain: ((dbEvent.domain as string) || "Municipal") as PulseEvent["domain"],
+    domain: normalizeDomain(dbEvent.domain as string),
     summary: (dbEvent.translated_description as string) || "Grievance event",
     assigned_officer: dbEvent.assigned_officer_id
       ? {
@@ -349,6 +390,7 @@ function mapDbEventToPulseEvent(dbEvent: Record<string, unknown>): PulseEvent {
     issue_type: dbEvent.issue_type as string | undefined,
     panic_flag: dbEvent.panic_flag as boolean | undefined,
     sentiment_score: dbEvent.sentiment_score as number | undefined,
+    impact_score: dbEvent.impact_score as number | undefined,
     original_text: dbEvent.raw_input as string | undefined,
   };
 }

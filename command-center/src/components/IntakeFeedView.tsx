@@ -96,11 +96,12 @@ function formatFullTimestamp(ts: number): string {
 }
 
 function sentimentLabel(score: number): { label: string; color: string } {
-  if (score <= -0.5) return { label: "Very Negative", color: "var(--accent-crimson)" };
-  if (score < 0)     return { label: "Negative",      color: "var(--accent-amber)" };
-  if (score === 0)   return { label: "Neutral",        color: "var(--fg-muted)" };
-  if (score <= 0.5)  return { label: "Positive",       color: "var(--accent-blue)" };
-  return { label: "Very Positive", color: "var(--accent-green)" };
+  // Backend uses 0-10 urgency scale (10 = most urgent)
+  if (score >= 8) return { label: "Critical Urgency", color: "var(--accent-crimson)" };
+  if (score >= 6) return { label: "High Urgency",     color: "var(--accent-amber)" };
+  if (score >= 4) return { label: "Medium Urgency",    color: "var(--fg-secondary)" };
+  if (score >= 2) return { label: "Low Urgency",       color: "var(--accent-blue)" };
+  return { label: "Minimal",          color: "var(--accent-green)" };
 }
 
 /* ── domain tag chip ─────────────────────────────────────────── */
@@ -125,10 +126,10 @@ function DetailPanel({
 }) {
   const domain = resolveDomain(item);
   const sentiment = item.sentiment_score != null ? sentimentLabel(item.sentiment_score) : null;
-  // Normalise score from [-1,1] to [0,100] for the bar width
+  // Normalise score from [0,10] to [0,100] for the bar width
   const barWidth =
     item.sentiment_score != null
-      ? Math.round(((item.sentiment_score + 1) / 2) * 100)
+      ? Math.round((item.sentiment_score / 10) * 100)
       : 0;
 
   useEffect(() => {
