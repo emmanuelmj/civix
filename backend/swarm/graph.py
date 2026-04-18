@@ -19,6 +19,8 @@ import random
 import re
 from typing import Any, TypedDict
 
+import httpx
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
@@ -96,6 +98,33 @@ def _get_pinecone_service():
         return None
 
 
+async def _generate_embedding(text: str) -> list[float] | None:
+    """Generate a 1024-dim embedding using GitHub Models API."""
+    api_key = os.environ.get("GITHUB_MODELS_API_KEY", "")
+    base_url = os.environ.get(
+        "GITHUB_MODELS_BASE_URL",
+        "https://models.github.ai/orgs/imperialorg/inference",
+    )
+    if not api_key or api_key.startswith("ghp_placeholder"):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{base_url}/embeddings",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": "text-embedding-3-small", "input": text, "dimensions": 1024},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["data"][0]["embedding"]
+            else:
+                logger.warning(f"[Auditor] Embedding API returned {resp.status_code}")
+                return None
+    except Exception as e:
+        logger.warning(f"[Auditor] Embedding generation failed: {e}")
+        return None
+
+
 async def systemic_auditor_node(state: PulseState) -> dict:
     """
     Checks if this event is part of a systemic cluster using Pinecone
@@ -119,15 +148,17 @@ async def systemic_auditor_node(state: PulseState) -> dict:
         vectors = pc.fetch_vectors([state["event_id"]], namespace="civix-events")
 
         if state["event_id"] not in vectors:
-            # Event not yet in Pinecone — might be from webhook or trigger-swarm
-            # Use the attached vector if available, else fall back
+            # Event not yet in Pinecone — generate embedding on-the-fly
             logger.info(
-                f"[Auditor] Event {state['event_id']} not in Pinecone index. "
-                f"Using heuristic cluster check."
+                f"[Auditor] Event {state['event_id']} not in Pinecone. "
+                f"Generating embedding for cluster search..."
             )
-            return _mock_cluster_check(state)
-
-        event_vector = list(vectors[state["event_id"]].values)
+            event_vector = await _generate_embedding(state["translated_description"])
+            if event_vector is None:
+                logger.warning("[Auditor] Embedding generation failed — using heuristic.")
+                return _mock_cluster_check(state)
+        else:
+            event_vector = list(vectors[state["event_id"]].values)
 
         # Query for similar events
         matches = pc.query_similar(

@@ -392,6 +392,8 @@ function mapDbEventToPulseEvent(dbEvent: Record<string, unknown>): PulseEvent {
     sentiment_score: dbEvent.sentiment_score as number | undefined,
     impact_score: dbEvent.impact_score as number | undefined,
     original_text: dbEvent.raw_input as string | undefined,
+    resolved_at: dbEvent.resolved_at as string | undefined,
+    time_to_resolution: dbEvent.time_to_resolution as string | undefined,
   };
 }
 

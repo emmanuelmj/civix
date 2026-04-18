@@ -543,6 +543,11 @@ export function GrievanceDetail({ event, onClose }: GrievanceDetailProps) {
                       {event.status}
                     </InlineBadge>
                   </div>
+                  {event.time_to_resolution && (
+                    <div style={{ marginTop: 8, padding: "6px 12px", background: "var(--accent-green-dim, #f0fdf4)", borderRadius: 8, fontSize: 12, color: "var(--accent-green, #16a34a)" }}>
+                      ⏱ Resolved in {event.time_to_resolution}
+                    </div>
+                  )}
                 </div>
               </div>
             </section>

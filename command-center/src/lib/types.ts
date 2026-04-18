@@ -38,6 +38,8 @@ export interface PulseEvent {
   panic_flag?: boolean;
   sentiment_score?: number;
   impact_score?: number;
+  resolved_at?: string;
+  time_to_resolution?: string;   // PostgreSQL INTERVAL as string
 }
 
 export interface SwarmLogEntry {

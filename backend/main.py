@@ -607,6 +607,65 @@ async def officer_update_location(payload: LocationUpdate) -> dict[str, Any]:
     return {"status": "ok", "officer_id": payload.officer_id}
 
 
+async def _llm_verify_resolution(
+    description: str,
+    domain: str,
+    officer_notes: str | None,
+    has_photo: bool,
+) -> dict[str, Any]:
+    """Use LLM to evaluate whether a resolution is credible."""
+    try:
+        try:
+            from backend.swarm.graph import _build_priority_llm
+        except ImportError:
+            from swarm.graph import _build_priority_llm
+
+        llm = _build_priority_llm()
+        if llm is None:
+            return {"confidence": 0.94 if has_photo else 0.72, "reasoning": "LLM unavailable — default confidence", "method": "fallback"}
+
+        system_prompt = """You are a municipal resolution verification API. You evaluate whether a field resolution of a citizen complaint is credible.
+
+RULES:
+1. Respond with ONLY a JSON object. No other text.
+2. Evaluate based on: complaint type, officer notes, and whether photo evidence was provided.
+
+SCORING:
+- Photo evidence + detailed notes → 0.90-0.98
+- Photo evidence, minimal notes → 0.80-0.89
+- No photo, detailed notes → 0.65-0.79
+- No photo, no notes → 0.40-0.60
+
+RESPONSE FORMAT:
+{"confidence": 0.92, "reasoning": "Photo evidence provided for sewage cleanup, consistent with complaint type"}"""
+
+        user_msg = f"""Original complaint: {description}
+Domain: {domain}
+Officer notes: {officer_notes or 'No notes provided'}
+Photo evidence: {'Yes' if has_photo else 'No'}
+
+Return ONLY the JSON object."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_msg},
+        ]
+
+        response = await llm.ainvoke(messages)
+        import re
+        json_match = re.search(r"\{[^}]+\}", response.content, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+            confidence = float(data.get("confidence", 0.85))
+            reasoning = data.get("reasoning", "AI verification analysis")
+            return {"confidence": round(confidence, 2), "reasoning": reasoning, "method": "llm_analysis"}
+
+        return {"confidence": 0.85, "reasoning": "LLM response parsing failed — moderate confidence", "method": "fallback"}
+    except Exception as e:
+        logger.warning(f"[Verify] LLM verification failed: {e}")
+        return {"confidence": 0.94 if has_photo else 0.72, "reasoning": f"LLM error: {str(e)[:50]}", "method": "fallback"}
+
+
 @app.post("/api/v1/officer/verify-resolution")
 async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[str, Any]:
     """
@@ -616,15 +675,38 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
     logger.info(f"Verification from {payload.officer_id} for event {payload.event_id}")
     has_photo = payload.photo_base64 is not None and len(payload.photo_base64) > 0
 
-    # Simulate AI verification (in production, would analyze the photo)
+    # Fetch original event description for LLM verification context
+    event_description = ""
+    event_domain = ""
+    try:
+        event_data = await get_event(payload.event_id)
+        if event_data:
+            event_description = event_data.get("translated_description", "")
+            event_domain = event_data.get("domain", "")
+    except Exception:
+        pass
+
+    # LLM-powered verification analysis
+    llm_result = await _llm_verify_resolution(
+        description=event_description,
+        domain=event_domain,
+        officer_notes=payload.notes,
+        has_photo=has_photo,
+    )
+
     verification_result = {
         "event_id": payload.event_id,
         "officer_id": payload.officer_id,
-        "verified": True,
-        "confidence": 0.94 if has_photo else 0.72,
-        "method": "photo_ai_analysis" if has_photo else "officer_attestation",
+        "verified": llm_result["confidence"] >= 0.5,
+        "confidence": llm_result["confidence"],
+        "method": llm_result["method"],
+        "reasoning": llm_result["reasoning"],
         "timestamp": time.time(),
     }
+    logger.info(
+        f"[Verify] LLM result: confidence={llm_result['confidence']}, "
+        f"method={llm_result['method']}, reasoning={llm_result['reasoning'][:60]}"
+    )
 
     # Persist to PostgreSQL
     try:
@@ -653,8 +735,9 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
 
     return {
         "status": "ok",
-        "verified": True,
+        "verified": verification_result["verified"],
         "confidence": verification_result["confidence"],
+        "reasoning": verification_result.get("reasoning", ""),
         "message": f"Event {payload.event_id} verified and closed.",
     }
 

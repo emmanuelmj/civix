@@ -33,6 +33,20 @@ const CHANNEL_ICONS: Record<string, string> = {
 
 /* ─── Helpers ─── */
 
+// Parse PostgreSQL interval "HH:MM:SS" or "X days HH:MM:SS" to minutes
+function parseTTRMinutes(ttr: string): number | null {
+  if (!ttr) return null;
+  const dayMatch = ttr.match(/(\d+)\s+days?\s+(\d+):(\d+):(\d+)/);
+  if (dayMatch) {
+    return parseInt(dayMatch[1]) * 1440 + parseInt(dayMatch[2]) * 60 + parseInt(dayMatch[3]);
+  }
+  const timeMatch = ttr.match(/(\d+):(\d+):(\d+)/);
+  if (timeMatch) {
+    return parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+  }
+  return null;
+}
+
 function pct(n: number, total: number): string {
   if (total === 0) return "0";
   return ((n / total) * 100).toFixed(1);
@@ -166,6 +180,12 @@ export function AnalyticsView({
     return { total, critical, avgImpact, resolutionRate, resolved };
   }, [events]);
 
+  /* ── Avg Time-to-Resolution ── */
+  const avgTTR = useMemo(() => {
+    const ttrValues = events.map(e => parseTTRMinutes(e.time_to_resolution || "")).filter((v): v is number => v !== null);
+    return ttrValues.length > 0 ? Math.round(ttrValues.reduce((a, b) => a + b, 0) / ttrValues.length) : null;
+  }, [events]);
+
   /* ── Domain distribution ── */
   const domainDist = useMemo(() => {
     const map: Record<string, number> = {};
@@ -295,6 +315,14 @@ export function AnalyticsView({
           suffix="%"
           accent={kpis.resolutionRate >= 50 ? "var(--accent-green)" : undefined}
         />
+        {avgTTR !== null && (
+          <KpiCard
+            label="Avg Resolution Time"
+            value={avgTTR >= 60 ? `${(avgTTR / 60).toFixed(1)}` : `${avgTTR}`}
+            suffix={avgTTR >= 60 ? "hrs" : "min"}
+            accent="var(--accent-green)"
+          />
+        )}
       </div>
 
       {/* ── Two‑column grid for mid‑sections ── */}
