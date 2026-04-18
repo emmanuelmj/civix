@@ -102,6 +102,23 @@ function useOfficerAggregates(events: PulseEvent[]): OfficerAggregate[] {
 
 /* ── officer card ─────────────────────────────────────────────── */
 
+// Civix-Pulse "Zero-Bureaucracy" rule: every officer is certified for
+// exactly one department. Map their primary skill code to a friendly label.
+const DEPARTMENT_LABELS: Record<string, string> = {
+  TRAFFIC:      "Road Infrastructure",
+  MUNICIPAL:    "Municipal Services",
+  WATER:        "Water & Sanitation",
+  ELECTRICITY:  "Electrical Grid",
+  EMERGENCY:    "Emergency Response",
+  CONSTRUCTION: "Construction Oversight",
+  SANITATION:   "Sanitation",
+};
+
+function primaryDepartment(skills?: string[] | null): string {
+  const code = (skills?.[0] || "").toUpperCase();
+  return DEPARTMENT_LABELS[code] || (code ? code.charAt(0) + code.slice(1).toLowerCase() : "General Services");
+}
+
 function OfficerCard({
   agg,
   onClick,
@@ -161,25 +178,22 @@ function OfficerCard({
             </span>
           </div>
 
-          {/* skills */}
-          {officer.skills && officer.skills.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {officer.skills.map((s) => (
-                <span
-                  key={s}
-                  className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                  style={{
-                    background: "var(--bg-surface)",
-                    color: "var(--fg-secondary)",
-                  }}
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* single department badge — Zero-Bureaucracy: one officer = one dept */}
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span
+              className="inline-flex items-center rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider"
+              style={{
+                background: "rgba(0,122,255,0.06)",
+                color: "var(--accent-blue)",
+                border: "1px solid rgba(0,122,255,0.15)",
+              }}
+            >
+              <span className="opacity-60 mr-1.5">Department:</span>
+              {primaryDepartment(officer.skills)}
+            </span>
+          </div>
 
-          {/* assignments + domains */}
+          {/* assignments */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <span
               className="text-sm font-medium"
@@ -187,23 +201,23 @@ function OfficerCard({
             >
               {activeTasks} active assignment{activeTasks !== 1 ? "s" : ""}
             </span>
-            {domains.map((d) => (
+            {domains.length > 0 && onDomainFilter && (
               <button
-                key={d}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDomainFilter?.(d);
+                  onDomainFilter(domains[0]);
                 }}
-                className="inline-flex items-center rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
+                className="inline-flex items-center rounded-md px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
                 style={{
                   background: "var(--bg-surface)",
                   color: "var(--fg-secondary)",
                   border: "1px solid var(--border-light)",
                 }}
+                title={`Filter by ${domains[0]}`}
               >
-                {d}
+                Filter
               </button>
-            ))}
+            )}
           </div>
         </div>
       </div>
@@ -423,32 +437,25 @@ function OfficerModal({
           </div>
         </div>
 
-        {/* ── SKILLS ──────────────────────────────────────────── */}
-        {officer.skills && officer.skills.length > 0 && (
-          <div className="mb-6">
-            <p
-              className={`${LABEL} mb-2`}
-              style={{ color: "var(--fg-muted)" }}
-            >
-              Skills
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {officer.skills.map((s) => (
-                <span
-                  key={s}
-                  className="rounded-full px-3 py-1 text-xs font-medium"
-                  style={{
-                    background: "rgba(0,122,255,0.06)",
-                    color: "var(--accent-blue)",
-                    border: "1px solid rgba(0,122,255,0.12)",
-                  }}
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── DEPARTMENT (single, enforced) ───────────────────── */}
+        <div className="mb-6">
+          <p
+            className={`${LABEL} mb-2`}
+            style={{ color: "var(--fg-muted)" }}
+          >
+            Department
+          </p>
+          <span
+            className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
+            style={{
+              background: "rgba(0,122,255,0.06)",
+              color: "var(--accent-blue)",
+              border: "1px solid rgba(0,122,255,0.15)",
+            }}
+          >
+            {primaryDepartment(officer.skills)}
+          </span>
+        </div>
 
         {/* ── HISTORY TIMELINE ────────────────────────────────── */}
         {history.length > 0 && (
