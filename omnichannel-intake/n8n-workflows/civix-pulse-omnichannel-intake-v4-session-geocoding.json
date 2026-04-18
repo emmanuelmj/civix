@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-04-17T20:05:38.765Z",
+  "updatedAt": "2026-04-18T01:47:53.946Z",
   "createdAt": "2026-04-17T17:35:27.432Z",
   "id": "hLSez72EcbqhrmhD",
   "name": "Civix-Pulse: Omnichannel Intake v4 (Session + Geocoding)",
@@ -50,8 +50,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -1440,
-        240
+        -1392,
+        624
       ],
       "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
     },
@@ -68,8 +68,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        -1200,
-        240
+        -1152,
+        624
       ]
     },
     {
@@ -81,8 +81,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -960,
-        240
+        -912,
+        624
       ]
     },
     {
@@ -114,8 +114,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -720,
-        240
+        -672,
+        624
       ]
     },
     {
@@ -127,8 +127,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -480,
-        240
+        -432,
+        624
       ]
     },
     {
@@ -248,8 +248,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        0,
-        0
+        -64,
+        512
       ]
     },
     {
@@ -313,8 +313,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        240,
-        80
+        -16,
+        16
       ]
     },
     {
@@ -402,8 +402,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
       "position": [
-        240,
-        240
+        208,
+        224
       ]
     },
     {
@@ -940,6 +940,22 @@
         3520,
         160
       ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "civix-pre",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -528,
+        256
+      ],
+      "id": "6af0e53a-a781-4285-aa9f-adad504ac982",
+      "name": "Webhook",
+      "webhookId": "defec61e-c11f-4491-ab5e-aa9728f7275e"
     }
   ],
   "connections": {
@@ -995,13 +1011,7 @@
     },
     "Session Manager": {
       "main": [
-        [
-          {
-            "node": "Session Router",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Session Router": {
@@ -1264,6 +1274,17 @@
           }
         ]
       ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Session Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1301,9 +1322,9 @@
       }
     ]
   },
-  "versionId": "064f889f-3fee-4bdf-94ec-16bc3f193d0e",
+  "versionId": "f17de326-24e2-4f86-8b46-93b7c5274452",
   "activeVersionId": null,
-  "versionCounter": 8,
+  "versionCounter": 21,
   "triggerCount": 0,
   "tags": [],
   "shared": [

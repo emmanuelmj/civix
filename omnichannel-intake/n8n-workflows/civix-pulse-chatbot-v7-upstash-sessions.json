@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-04-18T01:25:35.720Z",
+  "updatedAt": "2026-04-18T01:30:05.671Z",
   "createdAt": "2026-04-17T23:39:29.080Z",
   "id": "42FtMzpPb3j7IHd5",
   "name": "Civix-Pulse: Chatbot v7 (Upstash Sessions)",
@@ -1086,13 +1086,13 @@
         },
         "options": {}
       },
-      "id": "752f7579-00c9-44f7-8849-aaa779b60dfa",
-      "name": "Airtable Lookup (OPEN)",
+      "id": "beb41faa-1788-47a5-9f9c-914233b73d6a",
+      "name": "Airtable Lookup OPEN",
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2,
       "position": [
-        -1168,
-        -160
+        -912,
+        -128
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -1117,26 +1117,26 @@
         },
         "options": {}
       },
-      "id": "0c14efb3-0d50-4aef-9140-5f68eef446e2",
+      "id": "7152cfd3-3852-4c1c-8fe9-4fa68ccac4ab",
       "name": "Open Record Exists?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -928,
-        -160
+        -704,
+        -128
       ]
     },
     {
       "parameters": {
-        "jsCode": "const incoming = $('Extract Message Data').first().json;\nconst existing = $input.first().json?.fields || null;\n\nif (!existing) {\n  return [{ json: {\n    phone: incoming.phone,\n    translated_description: incoming.text,\n    latitude: incoming.latitude,\n    longitude: incoming.longitude,\n    image_url: incoming.image_id ? 'https://graph.facebook.com/v19.0/' + incoming.image_id : null,\n    raw_input: incoming.text,\n    mode: 'create'\n  }}];\n}\n\nreturn [{ json: {\n  id: $input.first().json.id,\n  phone: existing.phone,\n  translated_description: existing.translated_description || incoming.text,\n  latitude: existing.latitude || incoming.latitude,\n  longitude: existing.longitude || incoming.longitude,\n  image_url: existing.image_url || (incoming.image_id ? 'https://graph.facebook.com/v19.0/' + incoming.image_id : null),\n  raw_input: (existing.raw_input || '') + '\\n---\\n' + (incoming.text || 'media'),\n  mode: 'update'\n}}];"
+        "jsCode": "const incoming = $('Extract Message Data').first().json;\nconst existing = $input.first().json?.fields || null;\n\nconst newText = incoming.text || null;\nconst newLat = incoming.latitude || null;\nconst newLon = incoming.longitude || null;\nconst newImage = incoming.image_id ? 'https://graph.facebook.com/v19.0/' + incoming.image_id : null;\n\nif (!existing) {\n  return [{ json: {\n    phone: incoming.phone,\n    translated_description: newText || 'Pending',\n    latitude: newLat,\n    longitude: newLon,\n    image_url: newImage,\n    raw_input: newText || 'start',\n    stage: 'INIT',\n    status: 'OPEN',\n    created_at: new Date().toISOString(),\n    mode: 'create'\n  }}];\n}\n\nconst raw_input = (existing.raw_input || '') + '\\n---\\n' + (newText || (newImage ? 'image' : 'location'));\n\nconst translated_description = existing.translated_description || newText;\nconst latitude = existing.latitude || newLat;\nconst longitude = existing.longitude || newLon;\nconst image_url = existing.image_url || newImage;\n\nlet stage = 'INIT';\nif (!latitude || !longitude) stage = 'WAITING_LOCATION';\nelse if (!image_url) stage = 'WAITING_PHOTO';\nelse stage = 'COMPLETE';\n\nreturn [{ json: {\n  id: $input.first().json.id,\n  phone: existing.phone,\n  translated_description: translated_description || 'Pending',\n  latitude,\n  longitude,\n  image_url,\n  raw_input,\n  stage,\n  updated_at: new Date().toISOString(),\n  mode: 'update'\n}}];"
       },
-      "id": "9d457e86-a751-47db-b66c-3a082f89c20e",
+      "id": "b93cab7d-a6ed-4313-9a12-dd169e2a9b73",
       "name": "Merge Engine",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -688,
-        -160
+        -512,
+        -128
       ]
     },
     {
@@ -1158,21 +1158,206 @@
         },
         "columns": {
           "mappingMode": "defineBelow",
-          "value": null,
+          "value": {
+            "phone": "={{ $json.phone }}",
+            "status": "Open",
+            "translated_description": "={{ $json.translated_description }}",
+            "latitude": "={{ $json.latitude }}",
+            "longitude": "={{ $json.longitude }}",
+            "image_url": "={{ $json.image_url }}",
+            "raw_input": "={{ $json.raw_input }}",
+            "sentiment_score": 0
+          },
           "matchingColumns": [],
-          "schema": [],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Open",
+                  "value": "Open"
+                },
+                {
+                  "name": "Closed",
+                  "value": "Closed"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "issue_type",
+              "displayName": "issue_type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "translated_description",
+              "displayName": "translated_description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "sentiment_score",
+              "displayName": "sentiment_score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "panic_flag",
+              "displayName": "panic_flag",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "needs_photo",
+              "displayName": "needs_photo",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "location_text",
+              "displayName": "location_text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "latitude",
+              "displayName": "latitude",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "longitude",
+              "displayName": "longitude",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "audio_url",
+              "displayName": "audio_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "raw_input",
+              "displayName": "raw_input",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event_id",
+              "displayName": "event_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
           "attemptToConvertTypes": false,
           "convertFieldsToString": false
         },
         "options": {}
       },
-      "id": "15be3399-6bf6-4dc0-bea7-f8993aee1532",
-      "name": "Create Airtable Record",
+      "id": "26dfaabd-365f-47c8-bc37-b0224b2ebab5",
+      "name": "Create Airtable",
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2,
       "position": [
-        -448,
-        -16
+        -304,
+        32
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -1201,11 +1386,13 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "panic_flag": false,
-            "needs_photo": false,
+            "translated_description": "={{ $json.translated_description }}",
+            "latitude": "={{ $json.latitude || undefined }}",
+            "longitude": "={{ $json.longitude || undefined }}",
+            "image_url": "={{ $json.image_url }}",
+            "raw_input": "={{ $json.raw_input }}",
             "sentiment_score": 0,
-            "latitude": 0,
-            "longitude": 0
+            "phone": "={{ $json.phone }}"
           },
           "matchingColumns": [
             "phone"
@@ -1402,13 +1589,13 @@
         },
         "options": {}
       },
-      "id": "829fb8e9-f48e-4700-ab16-e9771f7bea46",
-      "name": "Update Airtable Record",
+      "id": "9fba1160-4aa3-4909-a24d-9bef183f9985",
+      "name": "Update Airtable",
       "type": "n8n-nodes-base.airtable",
       "typeVersion": 2,
       "position": [
-        -448,
-        -240
+        -304,
+        -224
       ],
       "credentials": {
         "airtableTokenApi": {
@@ -1421,13 +1608,13 @@
       "parameters": {
         "jsCode": "const d = $input.first().json;\nconst missing = [];\nif (!d.latitude || !d.longitude) missing.push('location');\nif (!d.image_url) missing.push('photo');\nreturn [{ json: { ...d, missing_fields: missing } }];"
       },
-      "id": "30e65626-c61f-4bee-8747-a821a919a793",
-      "name": "Missing Fields Check",
+      "id": "ad9903b1-6f1a-4964-b4be-71054ee75ccd",
+      "name": "Check Missing",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -208,
-        -160
+        -96,
+        -128
       ]
     },
     {
@@ -1446,13 +1633,13 @@
         },
         "options": {}
       },
-      "id": "4b4f9327-7d5e-410b-8cdf-5e1e5cc01dd6",
+      "id": "87a5d6fc-6c54-49eb-9585-329316af50e9",
       "name": "Is Complete?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        32,
-        -160
+        96,
+        -128
       ]
     }
   ],
@@ -1500,7 +1687,7 @@
         [],
         [
           {
-            "node": "Airtable Lookup (OPEN)",
+            "node": "Airtable Lookup OPEN",
             "type": "main",
             "index": 0
           }
@@ -1762,7 +1949,7 @@
         ]
       ]
     },
-    "Airtable Lookup (OPEN)": {
+    "Airtable Lookup OPEN": {
       "main": [
         [
           {
@@ -1784,7 +1971,7 @@
         ],
         [
           {
-            "node": "Create Airtable Record",
+            "node": "Create Airtable",
             "type": "main",
             "index": 0
           }
@@ -1795,36 +1982,36 @@
       "main": [
         [
           {
-            "node": "Update Airtable Record",
+            "node": "Update Airtable",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Update Airtable Record": {
+    "Update Airtable": {
       "main": [
         [
           {
-            "node": "Missing Fields Check",
+            "node": "Check Missing",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Create Airtable Record": {
+    "Create Airtable": {
       "main": [
         [
           {
-            "node": "Missing Fields Check",
+            "node": "Check Missing",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Missing Fields Check": {
+    "Check Missing": {
       "main": [
         [
           {
@@ -1839,7 +2026,7 @@
       "main": [
         [
           {
-            "node": "Chat Action Router",
+            "node": "Media Type Router",
             "type": "main",
             "index": 0
           }
@@ -1856,9 +2043,9 @@
     "templateCredsSetupCompleted": true
   },
   "pinData": {},
-  "versionId": "b2d2632c-80f7-4c75-9574-c55bcf6e1a95",
+  "versionId": "a74a9ff2-5f9d-4626-ac25-fa99b0590cf4",
   "activeVersionId": null,
-  "versionCounter": 30,
+  "versionCounter": 61,
   "triggerCount": 0,
   "tags": [],
   "shared": [

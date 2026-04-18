@@ -1,0 +1,48 @@
+{
+  "updatedAt": "2026-04-18T02:33:59.650Z",
+  "createdAt": "2026-04-18T02:23:58.264Z",
+  "id": "woFtZ02T5GMt7ynZ",
+  "name": "My workflow 2",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [],
+  "connections": {},
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "d6ce7ef0-ab03-4482-b268-5ba1384d5675",
+  "activeVersionId": null,
+  "versionCounter": 7,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-18T02:23:58.265Z",
+      "createdAt": "2026-04-18T02:23:58.265Z",
+      "role": "workflow:owner",
+      "workflowId": "woFtZ02T5GMt7ynZ",
+      "projectId": "3JsxL7LAcIm0kUQh",
+      "project": {
+        "updatedAt": "2026-04-17T12:01:35.419Z",
+        "createdAt": "2026-04-17T11:58:51.598Z",
+        "id": "3JsxL7LAcIm0kUQh",
+        "name": "Aditya T <teentechindia@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "46d3a616-af80-4367-86ea-aeebc4fccd4f"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

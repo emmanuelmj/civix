@@ -1,0 +1,297 @@
+{
+  "updatedAt": "2026-04-18T01:43:53.734Z",
+  "createdAt": "2026-04-18T01:42:58.086Z",
+  "id": "ajZIonWI9SRI1UO2",
+  "name": "My workflow",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ad76148f-edab-4f07-9aac-866727fec01d",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        -192
+      ],
+      "webhookId": "3643fcb6-868b-4ccd-a584-f283ce00b5a1"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"ok\"}",
+        "options": {}
+      },
+      "id": "e4ef18f7-cc5d-4e2d-b083-6940f82569ed",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nconst msg = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nconst contact = body.entry?.[0]?.changes?.[0]?.value?.contacts?.[0];\nreturn [{ json: {\n  phone: contact?.wa_id,\n  text: msg?.text?.body || null,\n  latitude: msg?.location?.latitude || null,\n  longitude: msg?.location?.longitude || null,\n  image_id: msg?.image?.id || null,\n  interactive: msg?.interactive || null\n}}];"
+      },
+      "id": "351ec082-6a20-452a-9dce-27948656b512",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "global.form = global.form || {};\nconst msg = $input.first().json;\nconst phone = msg.phone;\nif (!global.form[phone]) {\n  global.form[phone] = { step: \"ISSUE\", data: {} };\n}\nconst user = global.form[phone];\nlet reply = \"\";\nlet send_final = false;\nlet payload = null;\nif (user.step === \"ISSUE\") {\n  const issue = msg?.interactive?.list_reply?.id;\n  if (!issue) {\n    return [{ json: { reply: \"SHOW_ISSUE_LIST\", phone, send_final: false } }];\n  }\n  user.data.issue_type = issue;\n  user.step = \"LOCATION\";\n  reply = \"📍 Please send your location pin\";\n}\nelse if (user.step === \"LOCATION\") {\n  if (msg.latitude && msg.longitude) {\n    user.data.latitude = msg.latitude;\n    user.data.longitude = msg.longitude;\n    user.step = \"PHOTO\";\n    reply = \"📸 Send a photo or type skip\";\n  } else {\n    reply = \"Please send a location pin\";\n  }\n}\nelse if (user.step === \"PHOTO\") {\n  if (msg.image_id) {\n    user.data.image_url = \"https://graph.facebook.com/v19.0/\" + msg.image_id;\n  } else if ((msg.text || \"\").toLowerCase() === \"skip\") {\n    user.data.image_url = null;\n  } else {\n    return [{ json: { reply: \"Send image or type skip\", phone, send_final: false } }];\n  }\n  user.step = \"CONFIRM\";\n  reply = `Confirm complaint:\\nIssue: ${user.data.issue_type}\\nType YES to submit`;\n}\nelse if (user.step === \"CONFIRM\") {\n  if ((msg.text || \"\").toLowerCase() === \"yes\") {\n    payload = {\n      phone,\n      ...user.data,\n      timestamp: new Date().toISOString()\n    };\n    delete global.form[phone];\n    reply = \"✅ Complaint submitted successfully\";\n    send_final = true;\n  } else {\n    reply = \"Type YES to confirm\";\n  }\n}\nreturn [{ json: { reply, phone, send_final, payload } }];"
+      },
+      "id": "a4315837-f61b-44d0-a945-a15c4d155dfb",
+      "name": "Chat Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.send_final }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b60db750-7f80-4d3e-8115-af1b45242a9a",
+      "name": "IF Submit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        240,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.reply }}",
+              "operator": {
+                "type": "string",
+                "operation": "equal",
+                "value2": "SHOW_ISSUE_LIST"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b384d24c-562e-4fbd-aa3a-17dd65d926b1",
+      "name": "IF Show List",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "d472507f-3e4f-4e24-adcb-421868486eae",
+      "name": "Send Issue List",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        688,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v19.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "685ee936-9ad0-4417-8a0a-652da1ccd5e1",
+      "name": "Send Text Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        688,
+        -32
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message": {
+      "main": [
+        [
+          {
+            "node": "Chat Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Engine": {
+      "main": [
+        [
+          {
+            "node": "IF Submit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Submit": {
+      "main": [
+        [
+          {
+            "node": "Send Text Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Show List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Show List": {
+      "main": [
+        [
+          {
+            "node": "Send Issue List",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Text Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "6ca770a8-0d0e-4eb0-8a91-6b108465984b",
+  "activeVersionId": null,
+  "versionCounter": 3,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-18T01:42:58.088Z",
+      "createdAt": "2026-04-18T01:42:58.088Z",
+      "role": "workflow:owner",
+      "workflowId": "ajZIonWI9SRI1UO2",
+      "projectId": "3JsxL7LAcIm0kUQh",
+      "project": {
+        "updatedAt": "2026-04-17T12:01:35.419Z",
+        "createdAt": "2026-04-17T11:58:51.598Z",
+        "id": "3JsxL7LAcIm0kUQh",
+        "name": "Aditya T <teentechindia@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "46d3a616-af80-4367-86ea-aeebc4fccd4f"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}
