@@ -206,11 +206,20 @@ export function usePulseStream(): UsePulseStreamReturn {
           addEventWithLog(evt);
           break;
         }
-        case "intake_update":
-          setIntake((prev) =>
-            [mapBackendIntake(msgData), ...prev].slice(0, MAX_ITEMS),
-          );
+        case "intake_update": {
+          const newItem = mapBackendIntake(msgData);
+          setIntake((prev) => {
+            // Upsert: replace existing item with same ID, or prepend
+            const idx = prev.findIndex((i) => i.id === newItem.id);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = newItem;
+              return updated;
+            }
+            return [newItem, ...prev].slice(0, MAX_ITEMS);
+          });
           break;
+        }
         case "swarm_log":
           setLogs((prev) =>
             [mapBackendLog(msgData), ...prev].slice(0, MAX_ITEMS),

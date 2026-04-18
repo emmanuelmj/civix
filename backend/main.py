@@ -253,7 +253,26 @@ async def process_event_through_pipeline(event_data: dict[str, Any]) -> dict[str
 
     await manager.broadcast(dispatch_payload)
 
-    # ── 6. Persist to PostgreSQL ──────────────────────────────────
+    # ── 6. Broadcast: enriched intake update (with pipeline results) ──
+    await manager.broadcast({
+        "type": "intake_update",
+        "data": {
+            "id": f"intake-{event_id}",
+            "channel": channel,
+            "original_text": event_data.get("original_text", event_data["translated_description"]),
+            "translated_text": event_data["translated_description"],
+            "timestamp": ts_after,
+            "coordinates": event_data["coordinates"],
+            "citizen_name": citizen_name,
+            "citizen_id": citizen_id,
+            "issue_type": issue_type,
+            "panic_flag": panic_flag,
+            "sentiment_score": sentiment,
+            "impact_score": final_state["impact_score"],
+        },
+    })
+
+    # ── 7. Persist to PostgreSQL ──────────────────────────────────
     try:
         coords = final_state["coordinates"]
         await insert_pulse_event({
