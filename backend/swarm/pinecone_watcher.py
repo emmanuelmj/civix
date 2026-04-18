@@ -27,7 +27,8 @@ logger = logging.getLogger("civix-pulse.watcher")
 
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "civix-pulse")
-PINECONE_NAMESPACE = os.environ.get("PINECONE_NAMESPACE", "civix-events")
+PINECONE_NAMESPACE = os.environ.get("PINECONE_NAMESPACE", "")
+PINECONE_HISTORIC_NAMESPACE = os.environ.get("PINECONE_HISTORIC_NAMESPACE", "civix-events")
 POLL_INTERVAL = int(os.environ.get("PINECONE_POLL_INTERVAL", "5"))
 
 

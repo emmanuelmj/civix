@@ -46,6 +46,10 @@ CLUSTER_SIMILARITY_THRESHOLD = float(
 )
 CLUSTER_AMPLIFY_BONUS = 15  # Score bonus when cluster detected
 
+# Pinecone namespaces: live data from Dev 1 + historic corpus
+PINECONE_LIVE_NS = os.environ.get("PINECONE_NAMESPACE", "")
+PINECONE_HISTORIC_NS = os.environ.get("PINECONE_HISTORIC_NAMESPACE", "civix-events")
+
 # ---------------------------------------------------------------------------
 # State Schema (Enhanced)
 # ---------------------------------------------------------------------------
@@ -152,11 +156,13 @@ async def systemic_auditor_node(state: PulseState) -> dict:
         return _mock_cluster_check(state)
 
     try:
-        # Try to fetch this event's vector from Pinecone
-        vectors = pc.fetch_vectors([state["event_id"]], namespace="civix-events")
+        # Try to fetch this event's vector from both namespaces
+        vectors = pc.fetch_vectors([state["event_id"]], namespace=PINECONE_LIVE_NS)
+        if state["event_id"] not in vectors:
+            vectors = pc.fetch_vectors([state["event_id"]], namespace=PINECONE_HISTORIC_NS)
 
         if state["event_id"] not in vectors:
-            # Event not yet in Pinecone — generate embedding on-the-fly
+            # Event not in either namespace — generate embedding on-the-fly
             logger.info(
                 f"[Auditor] Event {state['event_id']} not in Pinecone. "
                 f"Generating embedding for cluster search..."
@@ -168,13 +174,28 @@ async def systemic_auditor_node(state: PulseState) -> dict:
         else:
             event_vector = list(vectors[state["event_id"]].values)
 
-        # Query for similar events
-        matches = pc.query_similar(
+        # Query BOTH namespaces for clusters and merge results
+        matches_live = pc.query_similar(
             vector=event_vector,
             top_k=10,
             exclude_id=state["event_id"],
-            namespace="civix-events",
+            namespace=PINECONE_LIVE_NS,
         )
+        matches_historic = pc.query_similar(
+            vector=event_vector,
+            top_k=10,
+            exclude_id=state["event_id"],
+            namespace=PINECONE_HISTORIC_NS,
+        )
+
+        # Merge and sort by similarity score (best first)
+        seen_ids: set[str] = set()
+        matches: list[dict] = []
+        for m in sorted(matches_live + matches_historic, key=lambda x: x["score"], reverse=True):
+            if m["id"] not in seen_ids:
+                seen_ids.add(m["id"])
+                matches.append(m)
+        matches = matches[:10]
 
         # Filter by threshold
         cluster_matches = [
