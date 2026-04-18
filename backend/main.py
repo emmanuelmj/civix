@@ -605,6 +605,33 @@ async def watcher_bootstrap() -> dict[str, Any]:
 # Field Worker (Officer) Endpoints
 # ---------------------------------------------------------------------------
 
+class OfficerLoginRequest(BaseModel):
+    officer_id: str = Field(..., description="Officer identifier, e.g. OP-102")
+    pin: str = Field(..., description="4-digit secure PIN")
+
+
+@app.post("/api/v1/auth/login")
+async def officer_login(payload: OfficerLoginRequest) -> dict[str, Any]:
+    """Authenticate a field officer and return their profile.
+
+    Demo PIN: 1234 for all officers. In production this would validate
+    against a hashed credential store.
+    """
+    if payload.pin != "1234":
+        return {"status": "error", "message": "Invalid PIN"}
+
+    try:
+        officer = await get_officer(payload.officer_id)
+        if officer is None:
+            return {"status": "error", "message": f"Officer {payload.officer_id} not found"}
+        for k, v in officer.items():
+            if hasattr(v, "isoformat"):
+                officer[k] = v.isoformat()
+        return {"status": "ok", "officer": officer}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 class LocationUpdate(BaseModel):
     officer_id: str = Field(..., description="Officer identifier, e.g. OP-441")
     lat: float = Field(..., description="Current latitude")

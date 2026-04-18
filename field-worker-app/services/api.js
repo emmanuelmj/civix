@@ -83,6 +83,14 @@ export async function pineconeStatus() {
   return request('/api/v1/pinecone/status');
 }
 
+// ── Officer Login ──────────────────────────────────────────────
+export async function loginOfficer(officerId, pin) {
+  return request('/api/v1/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ officer_id: officerId, pin }),
+  });
+}
+
 // ── Officer Profile ────────────────────────────────────────────
 export async function fetchOfficerProfile(officerId) {
   return request(`/api/v1/officer/${officerId}`);

@@ -17,39 +17,38 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
 import PhoneFrame from './components/PhoneFrame';
-import { healthCheck, updateOfficerLocation, verifyResolution, fetchOfficerTasks, fetchOfficerProfile } from './services/api';
+import { healthCheck, updateOfficerLocation, verifyResolution, fetchOfficerTasks } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-// Default officer identity (sourced from officers table — OP-102 Priya Sharma,
-// dedicated TRAFFIC / road-infrastructure officer, stationed in central Hyd).
-const DEFAULT_OFFICER_ID   = 'OP-102';
-const OFFICER_LAT = 17.3616;
-const OFFICER_LNG = 78.4747;
+// Default coordinates (Hyderabad center) used when officer has no location
+const DEFAULT_LAT = 17.3850;
+const DEFAULT_LNG = 78.4867;
 
-// This worker is scoped to a single department. Dashboard only surfaces
-// dispatches whose domain matches this code (analogous to dept === 'ROADS').
-const WORKER_DEPT      = 'TRAFFIC';
-const WORKER_DEPT_LABEL = 'Roads';
-const WORKER_ROLE      = 'Road Infrastructure';
+// Domain → human-readable label mapping
+const DOMAIN_LABELS = {
+  MUNICIPAL: 'Municipal',
+  TRAFFIC: 'Roads',
+  WATER: 'Water',
+  ELECTRICITY: 'Electrical',
+  CONSTRUCTION: 'Construction',
+  EMERGENCY: 'Emergency',
+};
 
 /**
  * Maps a raw backend event (from PostgreSQL) into the dispatch card format
  * used by the field worker UI.
  */
-function mapEventToDispatch(event) {
-  // Derive priority from impact_score
+function mapEventToDispatch(event, officerLat, officerLng) {
   const impact = event.impact_score ?? 50;
   let priority = 'MODERATE';
   if (impact >= 80) priority = 'CRITICAL';
   else if (impact >= 60) priority = 'HIGH';
   else if (impact < 40) priority = 'LOW';
 
-  // Compute rough distance from officer to event (Haversine approximation in km)
-  const dLat = (event.latitude - OFFICER_LAT) * 111.32;
-  const dLng = (event.longitude - OFFICER_LNG) * 111.32 * Math.cos(OFFICER_LAT * Math.PI / 180);
+  const dLat = (event.latitude - officerLat) * 111.32;
+  const dLng = (event.longitude - officerLng) * 111.32 * Math.cos(officerLat * Math.PI / 180);
   const dist = Math.sqrt(dLat * dLat + dLng * dLng).toFixed(1);
 
-  // Build a readable title from issue_type + domain + description
   const issueType = event.issue_type || event.domain || 'Issue';
   const descSnippet = (event.translated_description || '').slice(0, 40);
   const title = `${issueType} — ${descSnippet}`;
@@ -76,66 +75,6 @@ function mapEventToDispatch(event) {
   };
 }
 
-// Fallback mock dispatches in case backend is unreachable.
-// Diverse Hyderabad incidents covering all 6 Civix-Pulse domains so the
-// demo experience stays rich even without a live backend connection.
-const FALLBACK_DISPATCHES = [
-  {
-    id: 'rd-001', ticketId: 'TKT-9012',
-    title: 'Gas Leak — Banjara Hills Road No. 12',
-    description: 'Strong LPG smell reported near residential block. Evacuation underway, fire brigade en route.',
-    direction: 'Proceed 0.6km East to incident location', distance: '0.6 km',
-    priority: 'CRITICAL', lat: 17.4126, lng: 78.4348, time: '08:42',
-    reportedBy: 'Auto-clustered from 31 citizen reports', reportCount: 31,
-    domain: 'EMERGENCY', impact_score: 95, status: 'DISPATCHED',
-  },
-  {
-    id: 'rd-002', ticketId: 'TKT-9018',
-    title: 'Water Main Burst — Madhapur HITEC City',
-    description: 'Major water main rupture flooding the IT corridor. Traffic disruption on Cyber Towers road.',
-    direction: 'Proceed 1.4km North-West towards HITEC City', distance: '1.4 km',
-    priority: 'CRITICAL', lat: 17.4485, lng: 78.3908, time: '09:05',
-    reportedBy: 'Auto-clustered from 24 citizen reports', reportCount: 24,
-    domain: 'WATER', impact_score: 88, status: 'DISPATCHED',
-  },
-  {
-    id: 'rd-003', ticketId: 'TKT-9023',
-    title: 'Transformer Sparking — Kukatpally',
-    description: 'Distribution transformer emitting sparks during light rain. Power restored to 3 streets pending.',
-    direction: 'Proceed 2.1km North to KPHB Phase 5', distance: '2.1 km',
-    priority: 'HIGH', lat: 17.4849, lng: 78.4138, time: '09:18',
-    reportedBy: 'Auto-clustered from 12 citizen reports', reportCount: 12,
-    domain: 'ELECTRICITY', impact_score: 76, status: 'DISPATCHED',
-  },
-  {
-    id: 'rd-004', ticketId: 'TKT-9031',
-    title: 'Signal Outage — Punjagutta Junction',
-    description: 'All four-way traffic signals dark since 08:50. Manual traffic control required immediately.',
-    direction: 'Proceed 1.0km South to Punjagutta circle', distance: '1.0 km',
-    priority: 'HIGH', lat: 17.4274, lng: 78.4506, time: '09:24',
-    reportedBy: 'Auto-clustered from 18 citizen reports', reportCount: 18,
-    domain: 'TRAFFIC', impact_score: 72, status: 'DISPATCHED',
-  },
-  {
-    id: 'rd-005', ticketId: 'TKT-9040',
-    title: 'Garbage Overflow — Begumpet Market',
-    description: 'Open dump overflowing for 3 days. Stray animal activity, sanitation hazard.',
-    direction: 'Proceed 1.8km East towards Begumpet', distance: '1.8 km',
-    priority: 'MODERATE', lat: 17.4435, lng: 78.4626, time: '09:31',
-    reportedBy: 'Auto-clustered from 9 citizen reports', reportCount: 9,
-    domain: 'MUNICIPAL', impact_score: 54, status: 'DISPATCHED',
-  },
-  {
-    id: 'rd-006', ticketId: 'TKT-9047',
-    title: 'Construction Debris — Gachibowli ORR Service Road',
-    description: 'Unauthorised dumping of construction debris blocking footpath and one lane.',
-    direction: 'Proceed 3.2km West along ORR service road', distance: '3.2 km',
-    priority: 'LOW', lat: 17.4400, lng: 78.3489, time: '09:38',
-    reportedBy: 'Single citizen report', reportCount: 1,
-    domain: 'CONSTRUCTION', impact_score: 35, status: 'DISPATCHED',
-  },
-];
-
 // Departments available for cross-dept support requests
 const DEPARTMENTS = ['Water & Sanitation', 'Electrical Grid', 'Traffic Police', 'Heavy Machinery'];
 
@@ -154,18 +93,20 @@ export default function App() {
   const [activeTask,    setActiveTask]    = useState(null);
   const [activeIssues,  setActiveIssues]  = useState([]);
 
-  // Officer identity (loaded from backend or default)
-  const [officerId, setOfficerId] = useState(DEFAULT_OFFICER_ID);
+  // Officer identity — populated from backend login response
+  const [officerId, setOfficerId] = useState('');
   const [officerName, setOfficerName] = useState('Field Officer');
-  const [officerRole, setOfficerRole] = useState(WORKER_ROLE);
+  const [officerRole, setOfficerRole] = useState('');
+  const [officerDept, setOfficerDept] = useState('');       // e.g. "TRAFFIC"
+  const [officerDeptLabel, setOfficerDeptLabel] = useState(''); // e.g. "Roads"
+  const [officerLat, setOfficerLat] = useState(DEFAULT_LAT);
+  const [officerLng, setOfficerLng] = useState(DEFAULT_LNG);
 
-  // Real dispatches from backend (replaces hardcoded DISPATCHES)
+  // Real dispatches from backend
   const [dispatches, setDispatches] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
-  // (Category filter UI removed — this worker is dept-scoped to WORKER_DEPT.)
-
-  // Tracks whether the officer has gone on duty this session (prevents re-showing overlay on return)
+  // Tracks whether the officer has gone on duty this session
   const [hasGoneOnDuty, setHasGoneOnDuty] = useState(false);
 
   // Dashboard overlays (all position:absolute, no Modal portals)
@@ -175,9 +116,9 @@ export default function App() {
   // Active task — support request overlay
   const [supportOpen,     setSupportOpen]     = useState(false);
   const [supportText,     setSupportText]     = useState('');
-  const [selectedDept,    setSelectedDept]    = useState(null);  // chip selection
+  const [selectedDept,    setSelectedDept]    = useState(null);
   const [supportSent,     setSupportSent]     = useState(false);
-  const [assignedSupport, setAssignedSupport] = useState(null);  // simulated swarm dispatch
+  const [assignedSupport, setAssignedSupport] = useState(null);
 
   // Verification sub-phases: 'idle' | 'camera' | 'processing' | 'success'
   const [verifyPhase,   setVerifyPhase]   = useState('idle');
@@ -188,27 +129,16 @@ export default function App() {
   const cameraRef = useRef(null);
 
   // Backend connectivity
-  const [backendStatus, setBackendStatus] = useState(null); // null | 'ok' | 'offline'
+  const [backendStatus, setBackendStatus] = useState(null);
   const locationTimer = useRef(null);
+  // WebSocket for live dispatch notifications
+  const wsRef = useRef(null);
 
   // ── Auto-advance: Splash → Login ───────────────────────────────────────────
   useEffect(() => {
     if (appState !== 0) return;
-    // Check backend health + load officer profile during splash
     healthCheck()
-      .then(r => {
-        setBackendStatus(r?.status === 'ok' ? 'ok' : 'offline');
-        // Load officer profile if backend is up
-        if (r?.status === 'ok') {
-          fetchOfficerProfile(officerId).then(prof => {
-            if (prof?.status === 'ok' && prof.officer) {
-              setOfficerName(prof.officer.name || 'Field Officer');
-              const skills = prof.officer.domain_skills || '';
-              setOfficerRole(skills.split(' ').map(s => s.charAt(0) + s.slice(1).toLowerCase()).join(' '));
-            }
-          }).catch(() => {});
-        }
-      })
+      .then(r => setBackendStatus(r?.status === 'ok' ? 'ok' : 'offline'))
       .catch(() => setBackendStatus('offline'));
     const t = setTimeout(() => setAppState(1), 2000);
     return () => clearTimeout(t);
@@ -216,9 +146,9 @@ export default function App() {
 
   // ── Location pings every 15s while on duty ─────────────────────────────────
   useEffect(() => {
-    if (hasGoneOnDuty && backendStatus === 'ok') {
+    if (hasGoneOnDuty && backendStatus === 'ok' && officerId) {
       const sendLocation = () => {
-        updateOfficerLocation(officerId, OFFICER_LAT, OFFICER_LNG)
+        updateOfficerLocation(officerId, officerLat, officerLng)
           .then(r => r?.error && console.warn('[Location] ping failed'))
           .catch(() => {});
       };
@@ -231,25 +161,24 @@ export default function App() {
 
   // ── Load real tasks from backend when entering dashboard ───────────────────
   useEffect(() => {
-    if (appState !== 2) return;
+    if (appState !== 2 || !officerId) return;
     if (backendStatus !== 'ok') {
-      setDispatches(FALLBACK_DISPATCHES);
+      setDispatches([]);
       return;
     }
     setLoadingTasks(true);
     fetchOfficerTasks(officerId)
       .then(res => {
         if (res?.status === 'ok' && res.tasks?.length > 0) {
-          // Only show DISPATCHED tasks (not RESOLVED)
           const pending = res.tasks.filter(t => t.status !== 'RESOLVED');
-          setDispatches(pending.map(mapEventToDispatch));
+          setDispatches(pending.map(t => mapEventToDispatch(t, officerLat, officerLng)));
         } else {
-          setDispatches(FALLBACK_DISPATCHES);
+          setDispatches([]);
         }
       })
-      .catch(() => setDispatches(FALLBACK_DISPATCHES))
+      .catch(() => setDispatches([]))
       .finally(() => setLoadingTasks(false));
-  }, [appState, backendStatus]);
+  }, [appState, backendStatus, officerId]);
 
   // ── Show duty popup when arriving at Dashboard (only if not already on duty) ─
   useEffect(() => {
@@ -259,8 +188,74 @@ export default function App() {
     }
   }, [appState]);
 
+  // ── WebSocket: listen for live NEW_DISPATCH events ─────────────────────────
+  useEffect(() => {
+    if (appState < 2 || !officerId || backendStatus !== 'ok') return;
+    const wsUrl = 'ws://localhost:8000/ws/dashboard';
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.event_type === 'NEW_DISPATCH' && msg.data) {
+          const assigned = msg.data.assigned_officer;
+          if (assigned?.officer_id === officerId) {
+            // This dispatch is for us — add it live
+            const evt = msg.data.pulse_event;
+            const dispatch = mapEventToDispatch({
+              event_id: evt.event_id,
+              translated_description: evt.summary || evt.reasoning,
+              domain: evt.category,
+              issue_type: evt.issue_type,
+              impact_score: evt.impact_score,
+              latitude: evt.coordinates?.lat,
+              longitude: evt.coordinates?.lng,
+              source: 'live',
+              cluster_found: evt.cluster_found,
+              status: 'DISPATCHED',
+              created_at: new Date().toISOString(),
+            }, officerLat, officerLng);
+            setDispatches(prev => {
+              if (prev.some(d => d.id === dispatch.id)) return prev;
+              return [dispatch, ...prev];
+            });
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    // Keep-alive ping every 25s
+    const ping = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'PING' }));
+      }
+    }, 25000);
+
+    return () => {
+      clearInterval(ping);
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [appState, officerId, backendStatus, officerLat, officerLng]);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
-  const handleLogin = () => setAppState(2);
+  const handleLogin = (officerProfile) => {
+    // officerProfile comes from backend /api/v1/auth/login
+    setOfficerId(officerProfile.officer_id);
+    setOfficerName(officerProfile.name || 'Field Officer');
+    const skills = Array.isArray(officerProfile.domain_skills)
+      ? officerProfile.domain_skills
+      : (officerProfile.domain_skills || '').replace(/[{}]/g, '').split(',').filter(Boolean);
+    const primaryDept = skills[0] || '';
+    setOfficerDept(primaryDept);
+    setOfficerDeptLabel(DOMAIN_LABELS[primaryDept] || primaryDept);
+    setOfficerRole(skills.map(s => DOMAIN_LABELS[s] || s).join(' · '));
+    if (officerProfile.latitude) setOfficerLat(officerProfile.latitude);
+    if (officerProfile.longitude) setOfficerLng(officerProfile.longitude);
+    setBackendStatus('ok');
+    setAppState(2);
+  };
 
   const acceptDispatch = (d) => {
     const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -342,12 +337,8 @@ export default function App() {
     setAppState(2);
   };
 
-  // ── Dispatch list derivation ───────────────────────────────────────────────
-  // Single source of truth — all dispatches whose domain matches WORKER_DEPT.
-  // No secondary category chips: this worker is exclusively WORKER_ROLE.
-  const filteredDispatches = dispatches.filter(
-    d => (d.category || d.domain || '').toUpperCase() === WORKER_DEPT
-  );
+  // ── Dispatch list — all tasks assigned to this officer (no dept filter needed) ──
+  const filteredDispatches = dispatches;
 
   // ── Screen renderer ────────────────────────────────────────────────────────
   const renderScreen = () => {
@@ -393,15 +384,15 @@ export default function App() {
               </View>
             </View>
 
-            {/* Section label — header flows directly into task list, no chips */}
+            {/* Section label */}
             <View style={s.sectionRow}>
-              <Text style={s.sectionLabel}>AWAITING DISPATCHES ({WORKER_DEPT_LABEL.toUpperCase()}) ({filteredDispatches.length})</Text>
+              <Text style={s.sectionLabel}>DISPATCHES ({officerDeptLabel ? officerDeptLabel.toUpperCase() : 'ALL'}) ({filteredDispatches.length})</Text>
               <View style={s.roleBadge}>
                 <Text style={s.roleBadgeText}>🏛 {officerRole.toUpperCase()}</Text>
               </View>
             </View>
 
-            {/* Dispatch list — single dept-scoped feed, no secondary filtering */}
+            {/* Dispatch list */}
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16 }}>
               {loadingTasks ? (
                 <View style={{ alignItems: 'center', paddingTop: 40 }}>
@@ -413,7 +404,7 @@ export default function App() {
                   <Text style={{ fontSize: 40, marginBottom: 12 }}>✅</Text>
                   <Text style={{ color: T.text, fontSize: 16, fontWeight: '700' }}>All Clear</Text>
                   <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>
-                    No pending {WORKER_DEPT_LABEL.toLowerCase()} dispatches assigned.
+                    No pending dispatches assigned to you.
                   </Text>
                 </View>
               ) : (
@@ -704,7 +695,7 @@ export default function App() {
               <InfoRow label="OFFICER ID"  value={officerId} />
               <InfoRow label="NAME"        value={officerName} />
               <InfoRow label="ROLE"        value={officerRole} />
-              <InfoRow label="DEPARTMENT"  value="Field Operations" />
+              <InfoRow label="DEPARTMENT"  value={officerDeptLabel || 'Field Operations'} />
               <TouchableOpacity style={s.dutyBtn} onPress={() => { setDutyOverlay(false); setHasGoneOnDuty(true); }} activeOpacity={0.85}>
                 <Text style={s.dutyBtnText}>GO ON DUTY</Text>
               </TouchableOpacity>
@@ -722,7 +713,7 @@ export default function App() {
               <InfoRow label="OFFICER ID"  value={officerId} />
               <InfoRow label="NAME"        value={officerName} />
               <InfoRow label="ROLE"        value={officerRole} />
-              <InfoRow label="DEPARTMENT"  value="Field Operations" />
+              <InfoRow label="DEPARTMENT"  value={officerDeptLabel || 'Field Operations'} />
               <InfoRow label="SHIFT"       value="07:00 — 19:00" />
               <InfoRow label="STATUS"      value="ON DUTY" valueColor={T.success} />
               <TouchableOpacity style={s.drawerCloseBtn} onPress={() => setMenuOpen(false)} activeOpacity={0.85}>

@@ -4,34 +4,40 @@ import {
   ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { T } from '../constants/theme';
-
-// Demo credentials — any non-empty values work; OP-441 shows the default officer ID
-const DEMO_OFFICER_ID = 'OP-441';
-const DEMO_PIN = '1234';
+import { loginOfficer } from '../services/api';
 
 /**
  * LoginScreen
- * Shown as the first screen (LOGIN state). Validates officer ID + PIN,
- * then calls onLogin() to advance to OFF_DUTY.
+ * Authenticates the field officer against the backend.
+ * On success, calls onLogin(officerProfile) with the full profile object.
  */
 export default function LoginScreen({ onLogin }) {
-  const [officerId, setOfficerId] = useState(DEMO_OFFICER_ID);
+  const [officerId, setOfficerId] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = () => {
-    if (!officerId.trim() || !pin.trim()) {
+  const handleLogin = async () => {
+    const id = officerId.trim().toUpperCase();
+    const p = pin.trim();
+    if (!id || !p) {
       setError('Officer ID and PIN are required.');
       return;
     }
     setError('');
     setLoading(true);
-    // 800 ms simulated auth delay — replace with real API call when ready
-    setTimeout(() => {
+    try {
+      const res = await loginOfficer(id, p);
+      if (res?.status === 'ok' && res.officer) {
+        onLogin(res.officer);
+      } else {
+        setError(res?.message || 'Login failed. Check credentials.');
+      }
+    } catch {
+      setError('Cannot reach backend. Check connection.');
+    } finally {
       setLoading(false);
-      onLogin(officerId.trim());
-    }, 800);
+    }
   };
 
   return (
@@ -55,7 +61,7 @@ export default function LoginScreen({ onLogin }) {
           value={officerId}
           onChangeText={setOfficerId}
           autoCapitalize="characters"
-          placeholder="e.g. OP-441"
+          placeholder="e.g. OP-102"
           placeholderTextColor={T.textSecondary}
           returnKeyType="next"
         />
@@ -92,7 +98,7 @@ export default function LoginScreen({ onLogin }) {
         </TouchableOpacity>
 
         {/* Hint for demo */}
-        <Text style={styles.hint}>Demo: Use any Officer ID + any PIN</Text>
+        <Text style={styles.hint}>PIN: 1234 · Officers: OP-101 to OP-108</Text>
 
         <Text style={styles.footnote}>
           Restricted Government Access Only. Activity is logged.
