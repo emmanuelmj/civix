@@ -105,9 +105,11 @@ function useOfficerAggregates(events: PulseEvent[]): OfficerAggregate[] {
 function OfficerCard({
   agg,
   onClick,
+  onDomainFilter,
 }: {
   agg: OfficerAggregate;
   onClick: () => void;
+  onDomainFilter?: (domain: string) => void;
 }) {
   const { officer, activeTasks, domains } = agg;
   const isActive = activeTasks > 0;
@@ -186,7 +188,21 @@ function OfficerCard({
               {activeTasks} active assignment{activeTasks !== 1 ? "s" : ""}
             </span>
             {domains.map((d) => (
-              <DomainBadge key={d} domain={d as PulseEvent["domain"]} />
+              <button
+                key={d}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDomainFilter?.(d);
+                }}
+                className="inline-flex items-center rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
+                style={{
+                  background: "var(--bg-surface)",
+                  color: "var(--fg-secondary)",
+                  border: "1px solid var(--border-light)",
+                }}
+              >
+                {d}
+              </button>
             ))}
           </div>
         </div>
@@ -495,6 +511,10 @@ function OfficerModal({
 
 /* ── main view ────────────────────────────────────────────────── */
 
+const ALL_DEPARTMENTS: PulseEvent["domain"][] = [
+  "Municipal", "Traffic", "Construction", "Emergency", "Water", "Electricity",
+];
+
 export function OfficersView({ events, officers: dbOfficers = [] }: { events: PulseEvent[]; officers?: Officer[] }) {
   const eventAggregates = useOfficerAggregates(events);
 
@@ -535,8 +555,30 @@ export function OfficersView({ events, officers: dbOfficers = [] }: { events: Pu
   }, [dbOfficers, eventAggregates]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeDept, setActiveDept] = useState<string | null>(null);
 
-  const selectedAgg = aggregates.find(
+  const filteredAggregates = useMemo(() => {
+    if (!activeDept) return aggregates;
+    return aggregates.filter((a) =>
+      a.domains.some((d) => d.toLowerCase() === activeDept.toLowerCase()) ||
+      (a.officer.skills || []).some((s) => s.toLowerCase() === activeDept.toLowerCase())
+    );
+  }, [aggregates, activeDept]);
+
+  // Collect all departments that actually appear across officers
+  const availableDepts = useMemo(() => {
+    const deptSet = new Set<string>();
+    for (const agg of aggregates) {
+      for (const d of agg.domains) deptSet.add(d);
+      for (const s of agg.officer.skills || []) deptSet.add(s);
+    }
+    // Return in canonical order, only those that exist
+    return ALL_DEPARTMENTS.filter((d) =>
+      [...deptSet].some((s) => s.toLowerCase() === d.toLowerCase())
+    );
+  }, [aggregates]);
+
+  const selectedAgg = filteredAggregates.find(
     (a) => a.officer.officer_id === selectedId
   );
 
@@ -566,7 +608,7 @@ export function OfficersView({ events, officers: dbOfficers = [] }: { events: Pu
   return (
     <>
       {/* header */}
-      <div className="pt-8 pb-6 px-6">
+      <div className="pt-8 pb-4 px-6">
         <h2
           className="text-xl font-bold"
           style={{ color: "var(--fg-primary)" }}
@@ -579,16 +621,57 @@ export function OfficersView({ events, officers: dbOfficers = [] }: { events: Pu
         </p>
       </div>
 
+      {/* department filter pills */}
+      {availableDepts.length > 0 && (
+        <div className="px-6 pb-4 flex flex-wrap gap-2">
+          <button
+            onClick={() => setActiveDept(null)}
+            className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150"
+            style={{
+              background: !activeDept ? "var(--fg-primary)" : "var(--bg-surface)",
+              color: !activeDept ? "white" : "var(--fg-secondary)",
+              border: `1px solid ${!activeDept ? "var(--fg-primary)" : "var(--border-light)"}`,
+            }}
+          >
+            All
+          </button>
+          {availableDepts.map((dept) => (
+            <button
+              key={dept}
+              onClick={() => setActiveDept(activeDept === dept ? null : dept)}
+              className="rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-150"
+              style={{
+                background: activeDept === dept ? "var(--fg-primary)" : "var(--bg-surface)",
+                color: activeDept === dept ? "white" : "var(--fg-secondary)",
+                border: `1px solid ${activeDept === dept ? "var(--fg-primary)" : "var(--border-light)"}`,
+              }}
+            >
+              {dept}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* grid */}
       <div className="px-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {aggregates.map((agg) => (
+        {filteredAggregates.map((agg) => (
           <OfficerCard
             key={agg.officer.officer_id}
             agg={agg}
             onClick={() => setSelectedId(agg.officer.officer_id)}
+            onDomainFilter={(d) => setActiveDept(activeDept === d ? null : d)}
           />
         ))}
       </div>
+
+      {/* no results for filter */}
+      {filteredAggregates.length === 0 && activeDept && (
+        <div className="flex flex-col items-center justify-center py-16">
+          <p className="text-sm" style={{ color: "var(--fg-muted)" }}>
+            No officers in <span className="font-semibold">{activeDept}</span> department
+          </p>
+        </div>
+      )}
 
       {/* modal */}
       {selectedAgg && (
