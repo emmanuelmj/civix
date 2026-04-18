@@ -115,6 +115,9 @@ export default function App() {
   const [dispatches, setDispatches] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
+  // Active category filter on dashboard ('ALL' = no filter)
+  const [activeCategory, setActiveCategory] = useState('ALL');
+
   // Tracks whether the officer has gone on duty this session (prevents re-showing overlay on return)
   const [hasGoneOnDuty, setHasGoneOnDuty] = useState(false);
 
@@ -288,6 +291,21 @@ export default function App() {
     setAppState(2);
   };
 
+  // ── Category chips + filter derivation ─────────────────────────────────────
+  const categoryChips = [
+    { id: 'ALL',         label: '🗂 All' },
+    { id: 'WATER',       label: '💧 Water' },
+    { id: 'TRAFFIC',     label: '🚦 Traffic' },
+    { id: 'ELECTRICITY', label: '⚡ Electric' },
+    { id: 'MUNICIPAL',   label: '🏛 Municipal' },
+    { id: 'EMERGENCY',   label: '🚨 Emergency' },
+    { id: 'CONSTRUCTION',label: '🏗 Construction' },
+    { id: 'SANITATION',  label: '🧹 Sanitation' },
+  ];
+  const filteredDispatches = activeCategory === 'ALL'
+    ? dispatches
+    : dispatches.filter(d => (d.category || d.domain || '').toUpperCase() === activeCategory);
+
   // ── Screen renderer ────────────────────────────────────────────────────────
   const renderScreen = () => {
     switch (appState) {
@@ -334,10 +352,32 @@ export default function App() {
 
             {/* Section label */}
             <View style={s.sectionRow}>
-              <Text style={s.sectionLabel}>AWAITING DISPATCHES ({dispatches.length})</Text>
+              <Text style={s.sectionLabel}>AWAITING DISPATCHES ({filteredDispatches.length}/{dispatches.length})</Text>
               <View style={s.roleBadge}>
                 <Text style={s.roleBadgeText}>🏛 {officerRole.toUpperCase()}</Text>
               </View>
+            </View>
+
+            {/* Category filter chips — horizontal scrollable */}
+            <View style={s.filterRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 8 }}>
+                {categoryChips.map(cat => {
+                  const active = activeCategory === cat.id;
+                  const count = cat.id === 'ALL' ? dispatches.length : dispatches.filter(d => (d.category || d.domain || '').toUpperCase() === cat.id).length;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      onPress={() => setActiveCategory(cat.id)}
+                      style={[s.filterChip, active && s.filterChipActive]}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.filterChipText, active && s.filterChipTextActive]}>
+                        {cat.label} {count > 0 && <Text style={{ opacity: 0.65 }}>({count})</Text>}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
 
             {/* Dispatch list — real data from PostgreSQL */}
@@ -347,14 +387,25 @@ export default function App() {
                   <ActivityIndicator size="large" color={T.accent} />
                   <Text style={{ color: T.textSecondary, marginTop: 12, fontSize: 13 }}>Loading assignments…</Text>
                 </View>
-              ) : dispatches.length === 0 ? (
+              ) : filteredDispatches.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingTop: 40 }}>
-                  <Text style={{ fontSize: 40, marginBottom: 12 }}>✅</Text>
-                  <Text style={{ color: T.text, fontSize: 16, fontWeight: '700' }}>All Clear</Text>
-                  <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>No pending dispatches assigned.</Text>
+                  <Text style={{ fontSize: 40, marginBottom: 12 }}>{dispatches.length === 0 ? '✅' : '🔍'}</Text>
+                  <Text style={{ color: T.text, fontSize: 16, fontWeight: '700' }}>
+                    {dispatches.length === 0 ? 'All Clear' : 'No matches'}
+                  </Text>
+                  <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>
+                    {dispatches.length === 0
+                      ? 'No pending dispatches assigned.'
+                      : `No ${activeCategory === 'ALL' ? '' : activeCategory.toLowerCase() + ' '}dispatches in this category.`}
+                  </Text>
+                  {dispatches.length > 0 && activeCategory !== 'ALL' && (
+                    <TouchableOpacity onPress={() => setActiveCategory('ALL')} style={{ marginTop: 14 }}>
+                      <Text style={{ color: T.accent, fontSize: 12, fontWeight: '700' }}>SHOW ALL</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
-                dispatches.map(d => (
+                filteredDispatches.map(d => (
                   <DispatchCard key={d.id} d={d} onAccept={() => acceptDispatch(d)} />
                 ))
               )}
@@ -888,6 +939,13 @@ const s = StyleSheet.create({
   // ── Dashboard ────────────────────────────────────────────────────────────
   sectionRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   sectionLabel:   { fontSize: 11, fontWeight: '700', color: T.textSecondary, letterSpacing: 2.5 },
+
+  // Category filter chips on dashboard
+  filterRow:      { borderBottomWidth: 1, borderBottomColor: T.border || '#EAEAEA' },
+  filterChip:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: T.bgSurface || '#F4F4F6', borderWidth: 1, borderColor: T.border || '#E4E4E7' },
+  filterChipActive:{ backgroundColor: T.accent, borderColor: T.accent },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: T.textSecondary, letterSpacing: 0.5 },
+  filterChipTextActive: { color: '#fff' },
   roleBadge:      { backgroundColor: '#FFF7ED', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#FED7AA' },
   roleBadgeText:  { fontSize: 11, fontWeight: '700', color: '#92400E' },
   bottomBar:      { backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#F1F3F4', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20, gap: 10 },
