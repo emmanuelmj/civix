@@ -164,7 +164,11 @@ export function usePulseStream(): UsePulseStreamReturn {
   // ── Message handler ────────────────────────────────────────────
 
   const addEventWithLog = useCallback((evt: PulseEvent) => {
-    setEvents((prev) => [evt, ...prev].slice(0, MAX_ITEMS));
+    setEvents((prev) => {
+      // Deduplicate by event_id
+      const filtered = prev.filter((e) => e.event_id !== evt.event_id);
+      return [evt, ...filtered].slice(0, MAX_ITEMS);
+    });
     if (evt.log_message) {
       const logType: SwarmLogEntry["type"] =
         evt.status === "DISPATCHED"
@@ -172,18 +176,19 @@ export function usePulseStream(): UsePulseStreamReturn {
           : evt.status === "RESOLVED"
             ? "verification"
             : "analysis";
-      setLogs((prev) =>
-        [
+      setLogs((prev) => {
+        const logId = `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        return [
           {
-            id: `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+            id: logId,
             type: logType,
             message: evt.log_message,
             timestamp: evt.timestamp,
             event_id: evt.event_id,
           },
           ...prev,
-        ].slice(0, MAX_ITEMS),
-      );
+        ].slice(0, MAX_ITEMS);
+      });
     }
   }, []);
 
@@ -220,11 +225,14 @@ export function usePulseStream(): UsePulseStreamReturn {
           });
           break;
         }
-        case "swarm_log":
-          setLogs((prev) =>
-            [mapBackendLog(msgData), ...prev].slice(0, MAX_ITEMS),
-          );
+        case "swarm_log": {
+          const newLog = mapBackendLog(msgData);
+          setLogs((prev) => {
+            const filtered = prev.filter((l) => l.id !== newLog.id);
+            return [newLog, ...filtered].slice(0, MAX_ITEMS);
+          });
           break;
+        }
         case "event_status": {
           const { event_id, status: newStatus } = msgData as {
             event_id: string;
@@ -449,9 +457,17 @@ async function fetchExistingEvents(): Promise<{
     if (!res.ok) return { events: [], intake: [] };
     const data = await res.json();
     const dbEvents = (data.events || []) as Record<string, unknown>[];
+    // Deduplicate by event_id (DB may contain duplicates from re-processed vectors)
+    const seen = new Set<string>();
+    const unique = dbEvents.filter((e) => {
+      const id = e.event_id as string;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
     return {
-      events: dbEvents.map(mapDbEventToPulseEvent),
-      intake: dbEvents.map(mapDbEventToIntake),
+      events: unique.map(mapDbEventToPulseEvent),
+      intake: unique.map(mapDbEventToIntake),
     };
   } catch {
     return { events: [], intake: [] };
