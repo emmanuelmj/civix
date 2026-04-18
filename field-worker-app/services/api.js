@@ -82,3 +82,13 @@ export async function triggerAnalysis(eventId, description, domain, lat, lng) {
 export async function pineconeStatus() {
   return request('/api/v1/pinecone/status');
 }
+
+// ── Officer Profile ────────────────────────────────────────────
+export async function fetchOfficerProfile(officerId) {
+  return request(`/api/v1/officer/${officerId}`);
+}
+
+// ── Officer Tasks (assigned events from PostgreSQL) ────────────
+export async function fetchOfficerTasks(officerId, limit = 20) {
+  return request(`/api/v1/officer/${officerId}/tasks?limit=${limit}`);
+}

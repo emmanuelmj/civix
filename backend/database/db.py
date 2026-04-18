@@ -254,6 +254,39 @@ async def list_events(
 # ── Officers ──────────────────────────────────────────────────────────────
 
 
+async def get_officer(officer_id: str) -> dict[str, Any] | None:
+    """Return a single officer by ID, or None if not found."""
+    pool = get_pool()
+    try:
+        row = await pool.fetchrow(
+            "SELECT * FROM officers WHERE officer_id = $1", officer_id
+        )
+        return _rows_to_dicts([row])[0] if row else None
+    except Exception:
+        log.exception("get_officer failed for %s", officer_id)
+        raise
+
+
+async def list_officer_tasks(
+    officer_id: str,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Return events assigned to a specific officer, most recent first."""
+    pool = get_pool()
+    try:
+        rows = await pool.fetch(
+            "SELECT * FROM pulse_events "
+            "WHERE assigned_officer_id = $1 "
+            "ORDER BY created_at DESC LIMIT $2",
+            officer_id,
+            limit,
+        )
+        return _rows_to_dicts(rows)
+    except Exception:
+        log.exception("list_officer_tasks failed for %s", officer_id)
+        raise
+
+
 async def get_officers(
     status: str | None = None,
 ) -> list[dict[str, Any]]:

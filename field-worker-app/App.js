@@ -17,78 +17,74 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
 import PhoneFrame from './components/PhoneFrame';
-import { healthCheck, updateOfficerLocation, verifyResolution } from './services/api';
+import { healthCheck, updateOfficerLocation, verifyResolution, fetchOfficerTasks, fetchOfficerProfile } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const OFFICER_ID   = 'OP-101';
-const OFFICER_ROLE = 'Road Infrastructure';
+const DEFAULT_OFFICER_ID   = 'OP-101';
+const OFFICER_LAT = 17.4482;
+const OFFICER_LNG = 78.3914;
 
-// ─── MOCK DATA (role-filtered — road worker only) ─────────────────────────────
-const DISPATCHES = [
+/**
+ * Maps a raw backend event (from PostgreSQL) into the dispatch card format
+ * used by the field worker UI.
+ */
+function mapEventToDispatch(event) {
+  // Derive priority from impact_score
+  const impact = event.impact_score ?? 50;
+  let priority = 'MODERATE';
+  if (impact >= 80) priority = 'CRITICAL';
+  else if (impact >= 60) priority = 'HIGH';
+  else if (impact < 40) priority = 'LOW';
+
+  // Compute rough distance from officer to event (Haversine approximation in km)
+  const dLat = (event.latitude - OFFICER_LAT) * 111.32;
+  const dLng = (event.longitude - OFFICER_LNG) * 111.32 * Math.cos(OFFICER_LAT * Math.PI / 180);
+  const dist = Math.sqrt(dLat * dLat + dLng * dLng).toFixed(1);
+
+  // Build a readable title from issue_type + domain + description
+  const issueType = event.issue_type || event.domain || 'Issue';
+  const descSnippet = (event.translated_description || '').slice(0, 40);
+  const title = `${issueType} — ${descSnippet}`;
+
+  const created = event.created_at ? new Date(event.created_at) : new Date();
+  const time = created.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  return {
+    id: event.event_id,
+    ticketId: event.event_id.slice(0, 8).toUpperCase(),
+    title,
+    description: event.translated_description || 'No description provided.',
+    direction: `Proceed ${dist}km to incident location`,
+    distance: `${dist} km`,
+    priority,
+    lat: event.latitude ?? 17.4,
+    lng: event.longitude ?? 78.4,
+    time,
+    reportedBy: `Source: ${event.source || 'citizen report'}`,
+    reportCount: event.cluster_found ? 5 : 1,
+    status: event.status,
+    impact_score: impact,
+    domain: event.domain,
+  };
+}
+
+// Fallback mock dispatches in case backend is unreachable
+const FALLBACK_DISPATCHES = [
   {
-    id: 'rd-001',
-    ticketId: 'TKT-7741',
+    id: 'rd-001', ticketId: 'TKT-7741',
     title: 'Massive Pothole — NH65 Tolichowki',
-    description: 'Deep pothole collapse near Tolichowki flyover. 3 vehicles damaged, radiator failures reported. Peak-hour congestion building rapidly.',
-    direction: 'Proceed 1.2km North on NH-65 to Tolichowki Flyover Junction',
-    distance: '1.2 km',
-    priority: 'HIGH',
-    lat: 17.4482, lng: 78.3914,
-    time: '08:30',
-    reportedBy: 'Auto-detected via 14 citizen reports',
-    reportCount: 14,
+    description: 'Deep pothole near Tolichowki flyover. 3 vehicles damaged.',
+    direction: 'Proceed 1.2km North on NH-65', distance: '1.2 km',
+    priority: 'HIGH', lat: 17.4482, lng: 78.3914, time: '08:30',
+    reportedBy: 'Auto-detected via 14 citizen reports', reportCount: 14,
   },
   {
-    id: 'rd-002',
-    ticketId: 'TKT-7748',
+    id: 'rd-002', ticketId: 'TKT-7748',
     title: 'Flooded Intersection — Jubilee Hills',
-    description: 'Storm water overflow flooding Road No. 36 Jubilee Hills intersection. 7 vehicles stalled. Emergency diversion required — pedestrians at risk.',
-    direction: 'Proceed 0.8km South-West to Road No.36 Jubilee Hills Intersection',
-    distance: '0.8 km',
-    priority: 'CRITICAL',
-    lat: 17.4150, lng: 78.4480,
-    time: '09:15',
-    reportedBy: 'Traffic CCTV Feed + 22 citizen reports',
-    reportCount: 22,
-  },
-  {
-    id: 'rd-003',
-    ticketId: 'TKT-7753',
-    title: 'Fallen Tree — Main Boulevard',
-    description: "Large Banyan tree blocking both inbound lanes after last night's storm. Emergency saw crew needed. No injuries — road fully sealed.",
-    direction: 'Proceed 2.4km East on Main Boulevard towards Jubilee Hills Check Post',
-    distance: '2.4 km',
-    priority: 'HIGH',
-    lat: 17.4325, lng: 78.4072,
-    time: '09:48',
-    reportedBy: 'Field Patrol Officer + 9 citizen reports',
-    reportCount: 9,
-  },
-  {
-    id: 'rd-004',
-    ticketId: 'TKT-7761',
-    title: 'Collapsed Road Divider — Outer Ring Rd',
-    description: 'Concrete median divider partially collapsed after truck collision near Kondapur Exit 14-B. Oncoming traffic merging dangerously. Barrier setup needed.',
-    direction: 'Proceed 3.1km North on Outer Ring Road, Exit 14-B near Kondapur',
-    distance: '3.1 km',
-    priority: 'MODERATE',
-    lat: 17.4608, lng: 78.3647,
-    time: '10:20',
-    reportedBy: 'Highway Patrol Report',
-    reportCount: 6,
-  },
-  {
-    id: 'rd-005',
-    ticketId: 'TKT-7769',
-    title: 'Waterlogging — Banjara Hills Rd 12',
-    description: 'Severe waterlogging accumulating on Road 12 Banjara Hills near KBR Park Gate 2. Storm drain blocked. Residential traffic at a standstill.',
-    direction: 'Proceed 1.7km West on Road 12, Banjara Hills to KBR Park Gate 2',
-    distance: '1.7 km',
-    priority: 'CRITICAL',
-    lat: 17.4254, lng: 78.4360,
-    time: '10:55',
-    reportedBy: '31 citizen reports via Civix App',
-    reportCount: 31,
+    description: 'Storm water overflow flooding Road No. 36.',
+    direction: 'Proceed 0.8km South-West', distance: '0.8 km',
+    priority: 'CRITICAL', lat: 17.4150, lng: 78.4480, time: '09:15',
+    reportedBy: '22 citizen reports', reportCount: 22,
   },
 ];
 
@@ -109,6 +105,15 @@ export default function App() {
   const [appState,      setAppState]      = useState(0);
   const [activeTask,    setActiveTask]    = useState(null);
   const [activeIssues,  setActiveIssues]  = useState([]);
+
+  // Officer identity (loaded from backend or default)
+  const [officerId, setOfficerId] = useState(DEFAULT_OFFICER_ID);
+  const [officerName, setOfficerName] = useState('Field Officer');
+  const [officerRole, setOfficerRole] = useState('Municipal Services');
+
+  // Real dispatches from backend (replaces hardcoded DISPATCHES)
+  const [dispatches, setDispatches] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
 
   // Tracks whether the officer has gone on duty this session (prevents re-showing overlay on return)
   const [hasGoneOnDuty, setHasGoneOnDuty] = useState(false);
@@ -139,9 +144,21 @@ export default function App() {
   // ── Auto-advance: Splash → Login ───────────────────────────────────────────
   useEffect(() => {
     if (appState !== 0) return;
-    // Check backend health during splash
+    // Check backend health + load officer profile during splash
     healthCheck()
-      .then(r => setBackendStatus(r?.status === 'ok' ? 'ok' : 'offline'))
+      .then(r => {
+        setBackendStatus(r?.status === 'ok' ? 'ok' : 'offline');
+        // Load officer profile if backend is up
+        if (r?.status === 'ok') {
+          fetchOfficerProfile(officerId).then(prof => {
+            if (prof?.status === 'ok' && prof.officer) {
+              setOfficerName(prof.officer.name || 'Field Officer');
+              const skills = prof.officer.domain_skills || '';
+              setOfficerRole(skills.split(' ').map(s => s.charAt(0) + s.slice(1).toLowerCase()).join(' '));
+            }
+          }).catch(() => {});
+        }
+      })
       .catch(() => setBackendStatus('offline'));
     const t = setTimeout(() => setAppState(1), 2000);
     return () => clearTimeout(t);
@@ -151,8 +168,7 @@ export default function App() {
   useEffect(() => {
     if (hasGoneOnDuty && backendStatus === 'ok') {
       const sendLocation = () => {
-        // Use mock location (Hyderabad) — in production, use expo-location
-        updateOfficerLocation(OFFICER_ID, 17.4482, 78.3914)
+        updateOfficerLocation(officerId, OFFICER_LAT, OFFICER_LNG)
           .then(r => r?.error && console.warn('[Location] ping failed'))
           .catch(() => {});
       };
@@ -162,6 +178,28 @@ export default function App() {
     }
     return () => { if (locationTimer.current) clearInterval(locationTimer.current); };
   }, [hasGoneOnDuty, backendStatus]);
+
+  // ── Load real tasks from backend when entering dashboard ───────────────────
+  useEffect(() => {
+    if (appState !== 2) return;
+    if (backendStatus !== 'ok') {
+      setDispatches(FALLBACK_DISPATCHES);
+      return;
+    }
+    setLoadingTasks(true);
+    fetchOfficerTasks(officerId)
+      .then(res => {
+        if (res?.status === 'ok' && res.tasks?.length > 0) {
+          // Only show DISPATCHED tasks (not RESOLVED)
+          const pending = res.tasks.filter(t => t.status !== 'RESOLVED');
+          setDispatches(pending.map(mapEventToDispatch));
+        } else {
+          setDispatches(FALLBACK_DISPATCHES);
+        }
+      })
+      .catch(() => setDispatches(FALLBACK_DISPATCHES))
+      .finally(() => setLoadingTasks(false));
+  }, [appState, backendStatus]);
 
   // ── Show duty popup when arriving at Dashboard (only if not already on duty) ─
   useEffect(() => {
@@ -216,7 +254,7 @@ export default function App() {
     if (backendStatus === 'ok' && activeTask) {
       try {
         const res = await verifyResolution(
-          OFFICER_ID,
+          officerId,
           activeTask.ticketId || activeTask.id,
           base64Uri,
           'Resolution verified by field worker'
@@ -296,17 +334,30 @@ export default function App() {
 
             {/* Section label */}
             <View style={s.sectionRow}>
-              <Text style={s.sectionLabel}>AWAITING DISPATCHES</Text>
+              <Text style={s.sectionLabel}>AWAITING DISPATCHES ({dispatches.length})</Text>
               <View style={s.roleBadge}>
-                <Text style={s.roleBadgeText}>🚧 ROAD WORKER</Text>
+                <Text style={s.roleBadgeText}>🏛 {officerRole.toUpperCase()}</Text>
               </View>
             </View>
 
-            {/* Dispatch list */}
+            {/* Dispatch list — real data from PostgreSQL */}
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16 }}>
-              {DISPATCHES.map(d => (
-                <DispatchCard key={d.id} d={d} onAccept={() => acceptDispatch(d)} />
-              ))}
+              {loadingTasks ? (
+                <View style={{ alignItems: 'center', paddingTop: 40 }}>
+                  <ActivityIndicator size="large" color={T.accent} />
+                  <Text style={{ color: T.textSecondary, marginTop: 12, fontSize: 13 }}>Loading assignments…</Text>
+                </View>
+              ) : dispatches.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingTop: 40 }}>
+                  <Text style={{ fontSize: 40, marginBottom: 12 }}>✅</Text>
+                  <Text style={{ color: T.text, fontSize: 16, fontWeight: '700' }}>All Clear</Text>
+                  <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>No pending dispatches assigned.</Text>
+                </View>
+              ) : (
+                dispatches.map(d => (
+                  <DispatchCard key={d.id} d={d} onAccept={() => acceptDispatch(d)} />
+                ))
+              )}
             </ScrollView>
 
             {/* Bottom bar */}
@@ -594,8 +645,9 @@ export default function App() {
               </View>
               <Text style={s.logoSub}>Field Operations Ready</Text>
               <View style={{ height: 1, backgroundColor: T.border, marginVertical: 14 }} />
-              <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
-              <InfoRow label="ROLE"        value={OFFICER_ROLE} />
+              <InfoRow label="OFFICER ID"  value={officerId} />
+              <InfoRow label="NAME"        value={officerName} />
+              <InfoRow label="ROLE"        value={officerRole} />
               <InfoRow label="DEPARTMENT"  value="Field Operations" />
               <TouchableOpacity style={s.dutyBtn} onPress={() => { setDutyOverlay(false); setHasGoneOnDuty(true); }} activeOpacity={0.85}>
                 <Text style={s.dutyBtnText}>GO ON DUTY</Text>
@@ -611,8 +663,9 @@ export default function App() {
             <View style={s.drawer}>
               <View style={s.drawerHandle} />
               <Text style={s.drawerTitle}>Officer Profile</Text>
-              <InfoRow label="OFFICER ID"  value={OFFICER_ID} />
-              <InfoRow label="ROLE"        value={OFFICER_ROLE} />
+              <InfoRow label="OFFICER ID"  value={officerId} />
+              <InfoRow label="NAME"        value={officerName} />
+              <InfoRow label="ROLE"        value={officerRole} />
               <InfoRow label="DEPARTMENT"  value="Field Operations" />
               <InfoRow label="SHIFT"       value="07:00 — 19:00" />
               <InfoRow label="STATUS"      value="ON DUTY" valueColor={T.success} />

@@ -33,16 +33,18 @@ try:
     from backend.swarm.pinecone_watcher import PineconeService, PineconeWatcher, extract_metadata
     from backend.database.db import (
         init_pool, close_pool, insert_pulse_event, update_event_status,
-        insert_dispatch_log, get_officers, update_officer_location,
+        insert_dispatch_log, get_officers, get_officer, update_officer_location,
         update_officer_status, find_nearest_officer, list_events, get_event,
+        list_officer_tasks,
     )
 except ImportError:
     from swarm.graph import compile_graph, PulseState
     from swarm.pinecone_watcher import PineconeService, PineconeWatcher, extract_metadata
     from database.db import (
         init_pool, close_pool, insert_pulse_event, update_event_status,
-        insert_dispatch_log, get_officers, update_officer_location,
+        insert_dispatch_log, get_officers, get_officer, update_officer_location,
         update_officer_status, find_nearest_officer, list_events, get_event,
+        list_officer_tasks,
     )
 
 # ---------------------------------------------------------------------------
@@ -655,6 +657,38 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
         "confidence": verification_result["confidence"],
         "message": f"Event {payload.event_id} verified and closed.",
     }
+
+
+# ── Officer Query Endpoints (for field worker app) ──────────────
+
+@app.get("/api/v1/officer/{officer_id}")
+async def api_get_officer(officer_id: str) -> dict[str, Any]:
+    """Get officer profile by ID."""
+    try:
+        officer = await get_officer(officer_id)
+        if officer is None:
+            return {"status": "not_found", "officer_id": officer_id}
+        for k, v in officer.items():
+            if hasattr(v, "isoformat"):
+                officer[k] = v.isoformat()
+        return {"status": "ok", "officer": officer}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/api/v1/officer/{officer_id}/tasks")
+async def api_officer_tasks(officer_id: str, limit: int = 20) -> dict[str, Any]:
+    """List events assigned to a specific officer — used by the field worker app."""
+    try:
+        events = await list_officer_tasks(officer_id, limit=limit)
+        for e in events:
+            for k, v in e.items():
+                if hasattr(v, "isoformat"):
+                    e[k] = v.isoformat()
+        return {"status": "ok", "officer_id": officer_id, "count": len(events), "tasks": events}
+    except Exception as e:
+        logger.error(f"Failed to fetch tasks for {officer_id}: {e}")
+        return {"status": "error", "error": str(e), "tasks": []}
 
 
 # ── Data Query Endpoints (for dashboard) ────────────────────────
