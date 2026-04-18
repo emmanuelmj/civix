@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -6,16 +6,34 @@ import {
 import { T } from '../constants/theme';
 import { loginOfficer } from '../services/api';
 
+const DOMAIN_LABELS = {
+  MUNICIPAL: 'Municipal Services',
+  TRAFFIC: 'Traffic & Roads',
+  WATER: 'Water & Sanitation',
+  ELECTRICITY: 'Electrical Grid',
+  CONSTRUCTION: 'Construction',
+  EMERGENCY: 'Emergency Response',
+};
+
 /**
  * LoginScreen
  * Authenticates the field officer against the backend.
- * On success, calls onLogin(officerProfile) with the full profile object.
+ * On success, shows a brief welcome confirmation with officer details,
+ * then calls onLogin(officerProfile).
  */
 export default function LoginScreen({ onLogin }) {
   const [officerId, setOfficerId] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [confirmed, setConfirmed] = useState(null); // officer profile after auth
+
+  // After confirmation screen shows, advance to dashboard
+  useEffect(() => {
+    if (!confirmed) return;
+    const t = setTimeout(() => onLogin(confirmed), 1800);
+    return () => clearTimeout(t);
+  }, [confirmed]);
 
   const handleLogin = async () => {
     const id = officerId.trim().toUpperCase();
@@ -29,7 +47,7 @@ export default function LoginScreen({ onLogin }) {
     try {
       const res = await loginOfficer(id, p);
       if (res?.status === 'ok' && res.officer) {
-        onLogin(res.officer);
+        setConfirmed(res.officer);
       } else {
         setError(res?.message || 'Login failed. Check credentials.');
       }
@@ -39,6 +57,46 @@ export default function LoginScreen({ onLogin }) {
       setLoading(false);
     }
   };
+
+  // ── Welcome confirmation screen ──
+  if (confirmed) {
+    const skills = Array.isArray(confirmed.domain_skills)
+      ? confirmed.domain_skills
+      : (confirmed.domain_skills || '').replace(/[{}]/g, '').split(',').filter(Boolean);
+    const deptLabel = skills.map(s => DOMAIN_LABELS[s] || s).join(' · ');
+
+    return (
+      <View style={styles.root}>
+        <View style={[styles.card, { alignItems: 'center' }]}>
+          {/* Avatar circle */}
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {(confirmed.name || 'O').charAt(0).toUpperCase()}
+            </Text>
+          </View>
+
+          <Text style={styles.welcomeLabel}>AUTHENTICATED</Text>
+          <Text style={styles.welcomeName}>{confirmed.name}</Text>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>ID</Text>
+            <Text style={styles.detailValue}>{confirmed.officer_id}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>DEPARTMENT</Text>
+            <Text style={styles.detailValue}>{deptLabel}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>STATUS</Text>
+            <Text style={[styles.detailValue, { color: T.success }]}>AUTHORIZED</Text>
+          </View>
+
+          <ActivityIndicator color={T.accent} style={{ marginTop: 20 }} />
+          <Text style={styles.welcomeHint}>Entering command center…</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -51,8 +109,8 @@ export default function LoginScreen({ onLogin }) {
           <Text style={styles.brandTitle}>CIVIX</Text>
           <View style={styles.brandDot} />
         </View>
-        <Text style={styles.brandSub}>COMMAND CENTER</Text>
-        <Text style={styles.heading}>Field Officer Login</Text>
+        <Text style={styles.brandSub}>FIELD PERSONNEL</Text>
+        <Text style={styles.heading}>Secure Login</Text>
 
         {/* Officer ID */}
         <Text style={styles.label}>Officer ID</Text>
@@ -207,5 +265,58 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 24,
+  },
+  // Welcome confirmation styles
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: T.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatarText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: T.white,
+  },
+  welcomeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 3,
+    color: T.success,
+    marginBottom: 6,
+  },
+  welcomeName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: T.text,
+    marginBottom: 20,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  detailLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: T.textSecondary,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: T.text,
+  },
+  welcomeHint: {
+    fontSize: 12,
+    color: T.textSecondary,
+    marginTop: 8,
   },
 });
