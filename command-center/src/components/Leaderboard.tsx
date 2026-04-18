@@ -64,10 +64,10 @@ interface LeaderboardProps {
   events?: PulseEvent[];
 }
 
-export function Leaderboard(_props: LeaderboardProps) {
-  void _props;
+export function Leaderboard({ events = [] }: LeaderboardProps) {
   const [departments, setDepartments] = useState<DepartmentStats[] | null>(null);
 
+  // Re-fetch from backend whenever new events arrive (events.length changes)
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -80,7 +80,7 @@ export function Leaderboard(_props: LeaderboardProps) {
       active = false;
       clearInterval(t);
     };
-  }, []);
+  }, [events.length]);
 
   const loading = departments === null;
   const rows = departments ?? [];
@@ -90,7 +90,7 @@ export function Leaderboard(_props: LeaderboardProps) {
       <div className="px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--border-light)" }}>
         <h2 className="text-sm font-semibold" style={{ color: "var(--fg-primary)" }}>Department Leaderboard</h2>
         <p className="text-[10px] font-mono mt-0.5" style={{ color: "var(--fg-muted)" }}>
-          Ranked by SLA compliance · Updated every 30s
+          Ranked by SLA compliance · Live updates
         </p>
       </div>
 

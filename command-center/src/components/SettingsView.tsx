@@ -19,7 +19,7 @@ export function SettingsView({ status, events, logs, intake }: Props) {
     fetchPineconeStatus().then(setPcStatus);
     const interval = setInterval(() => fetchPineconeStatus().then(setPcStatus), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [events.length]);
 
   const handleRescan = async () => {
     setRescanning(true);

@@ -383,6 +383,7 @@ export function ExecutiveReportsView({
   const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
   const [kpiData, setKpiData] = useState<KpiAnalytics | null>(null);
 
+  // Re-fetch timeline & KPIs whenever new events arrive
   useEffect(() => {
     let active = true;
     const load = async () => {
@@ -400,7 +401,7 @@ export function ExecutiveReportsView({
       active = false;
       clearInterval(int);
     };
-  }, []);
+  }, [events.length]);
 
   const timelineHeights = useMemo(() => normalizeHeights(timeline), [timeline]);
   const avgTtrLabel = kpiData?.avg_resolution_minutes == null

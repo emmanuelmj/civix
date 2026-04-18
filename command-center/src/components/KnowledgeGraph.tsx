@@ -312,7 +312,7 @@ export function KnowledgeGraph({ events }: KnowledgeGraphProps) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [events.length]);
 
   // Build & layout graph
   const rawGraph = useMemo(() => buildGraph(events, infraNodes), [events, infraNodes]);
