@@ -250,6 +250,35 @@ _DOMAIN_MAP: dict[str, str] = {
     "EMERGENCY": "EMERGENCY", "FIRE": "EMERGENCY", "SAFETY": "EMERGENCY",
 }
 
+# Keyword-based domain classifier for GENERAL/unknown domains
+_DOMAIN_KEYWORDS: list[tuple[str, list[str]]] = [
+    ("EMERGENCY",    ["fire", "blast", "explosion", "collapse", "accident", "flood", "danger",
+                      "emergency", "rescue", "ambulance", "death", "injured", "trapped"]),
+    ("TRAFFIC",      ["traffic", "road", "pothole", "signal", "congestion", "jam", "parking",
+                      "vehicle", "highway", "flyover", "divider", "speed", "zebra"]),
+    ("WATER",        ["water", "pipe", "leak", "sewage", "drainage", "borewell", "tank",
+                      "tap", "supply", "contaminated", "overflow", "plumbing"]),
+    ("ELECTRICITY",  ["electricity", "power", "transformer", "wire", "outage", "blackout",
+                      "voltage", "electric", "pole", "cable", "meter", "current"]),
+    ("CONSTRUCTION", ["construction", "building", "demolition", "illegal", "encroachment",
+                      "scaffold", "crane", "debris", "permit", "structural"]),
+    ("MUNICIPAL",    ["garbage", "waste", "sanitation", "sweeping", "dustbin", "stray",
+                      "mosquito", "pest", "park", "footpath", "streetlight", "manhole"]),
+]
+
+
+def _classify_domain(text: str) -> str:
+    """Classify domain from description text when domain is GENERAL or unknown."""
+    lower = text.lower()
+    scores: dict[str, int] = {}
+    for domain, keywords in _DOMAIN_KEYWORDS:
+        hits = sum(1 for kw in keywords if kw in lower)
+        if hits > 0:
+            scores[domain] = hits
+    if scores:
+        return max(scores, key=scores.get)
+    return "MUNICIPAL"  # safe fallback
+
 
 def _get_field(meta: dict, field: str, default: Any = "") -> Any:
     """Try multiple aliases for a field name."""
@@ -272,7 +301,11 @@ def extract_metadata(event_id: str, metadata: dict) -> dict[str, Any]:
     original_text = _get_field(metadata, "original_text") or description
 
     raw_domain = str(_get_field(metadata, "domain", "MUNICIPAL")).upper()
-    domain = _DOMAIN_MAP.get(raw_domain, raw_domain or "MUNICIPAL")
+    domain = _DOMAIN_MAP.get(raw_domain, "")
+    # Auto-classify if domain is GENERAL, unknown, or empty
+    if not domain or raw_domain in ("GENERAL", "OTHER", "MISC", "UNKNOWN", "NONE", ""):
+        domain = _classify_domain(description or original_text)
+        logger.info("[Watcher] Auto-classified domain '%s' → %s from description", raw_domain, domain)
 
     # Coordinates: default to central Hyderabad if 0 or missing
     lat = float(_get_field(metadata, "lat", 0))
