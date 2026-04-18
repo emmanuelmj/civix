@@ -111,6 +111,12 @@ function mapBackendIntake(raw: Record<string, unknown>): IntakeFeedItem {
     thumbnail: raw.thumbnail as string | undefined,
     timestamp: (raw.timestamp as number) || Date.now(),
     coordinates: raw.coordinates as { lat: number; lng: number } | undefined,
+    citizen_name: raw.citizen_name as string | undefined,
+    citizen_id: raw.citizen_id as string | undefined,
+    issue_type: raw.issue_type as string | undefined,
+    panic_flag: raw.panic_flag as boolean | undefined,
+    sentiment_score: raw.sentiment_score as number | undefined,
+    impact_score: raw.impact_score as number | undefined,
   };
 }
 
@@ -421,6 +427,7 @@ function mapDbEventToIntake(dbEvent: Record<string, unknown>): IntakeFeedItem {
     issue_type: dbEvent.issue_type as string | undefined,
     panic_flag: dbEvent.panic_flag as boolean | undefined,
     sentiment_score: dbEvent.sentiment_score as number | undefined,
+    impact_score: dbEvent.impact_score as number | undefined,
   };
 }
 

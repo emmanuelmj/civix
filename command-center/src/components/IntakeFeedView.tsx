@@ -328,7 +328,7 @@ function DetailPanel({
 
           {/* ── Enriched Intelligence Sections ── */}
 
-          {/* Sentiment Analysis (expanded) */}
+          {/* Sentiment Analysis (expanded) — score is 0-10 scale */}
           <section className="space-y-3">
             <h3
               className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
@@ -342,41 +342,49 @@ function DetailPanel({
                   {item.panic_flag ? "High Panic" : sentiment ? sentiment.label : "Not Assessed"}
                 </span>
                 <span className="text-lg font-bold tabular-nums" style={{ color: "var(--fg-primary)" }}>
-                  {item.sentiment_score != null ? `${Math.round(((item.sentiment_score + 1) / 2) * 10)}/10` : "—"}
+                  {item.sentiment_score != null ? `${item.sentiment_score}/10` : "—"}
                 </span>
               </div>
               <div className="h-2 w-full rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
                 <div className="h-full rounded-full transition-all duration-500" style={{
-                  width: `${item.sentiment_score != null ? Math.round(((item.sentiment_score + 1) / 2) * 100) : 0}%`,
+                  width: `${item.sentiment_score != null ? Math.round((item.sentiment_score / 10) * 100) : 0}%`,
                   background: item.panic_flag ? "var(--accent-crimson)" : sentiment ? sentiment.color : "var(--fg-muted)",
                 }} />
               </div>
             </div>
           </section>
 
-          {/* Impact Matrix Score */}
-          <section className="space-y-3">
-            <h3
-              className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
-              style={{ color: "var(--fg-muted)" }}
-            >
-              Impact Matrix Score
-            </h3>
-            <div className="rounded-lg p-4" style={{ background: "var(--bg-surface)" }}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium" style={{ color: "var(--fg-secondary)" }}>Severity Impact</span>
-                <span className="text-lg font-bold tabular-nums" style={{ color: "var(--accent-amber)" }}>
-                  {item.sentiment_score != null ? Math.min(100, Math.round(Math.abs(item.sentiment_score) * 85 + 15)) : 42}/100
-                </span>
-              </div>
-              <div className="h-2.5 w-full rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
-                <div className="h-full rounded-full transition-all duration-500" style={{
-                  width: `${item.sentiment_score != null ? Math.min(100, Math.round(Math.abs(item.sentiment_score) * 85 + 15)) : 42}%`,
-                  background: "var(--accent-amber)",
-                }} />
-              </div>
-            </div>
-          </section>
+          {/* Impact Matrix Score — uses real impact_score (0-100) from LangGraph pipeline */}
+          {(() => {
+            const impactVal = item.impact_score ?? null;
+            const impactColor = impactVal != null
+              ? impactVal >= 70 ? "var(--accent-crimson)" : impactVal >= 40 ? "var(--accent-amber)" : "var(--accent-blue)"
+              : "var(--fg-muted)";
+            return (
+              <section className="space-y-3">
+                <h3
+                  className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em]"
+                  style={{ color: "var(--fg-muted)" }}
+                >
+                  Impact Matrix Score
+                </h3>
+                <div className="rounded-lg p-4" style={{ background: "var(--bg-surface)" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium" style={{ color: "var(--fg-secondary)" }}>Severity Impact</span>
+                    <span className="text-lg font-bold tabular-nums" style={{ color: impactColor }}>
+                      {impactVal != null ? impactVal : "—"}/100
+                    </span>
+                  </div>
+                  <div className="h-2.5 w-full rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                    <div className="h-full rounded-full transition-all duration-500" style={{
+                      width: `${impactVal ?? 0}%`,
+                      background: impactColor,
+                    }} />
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* AI Recommended Action */}
           <section className="space-y-3">
@@ -522,15 +530,28 @@ export function IntakeFeedView({ items }: { items: IntakeFeedItem[] }) {
                 {item.translated_text}
               </p>
 
-              {/* footer: citizen name */}
-              {item.citizen_name && (
-                <p
-                  className="text-xs mt-2 font-mono"
-                  style={{ color: "var(--fg-secondary)" }}
-                >
-                  — {item.citizen_name}
-                </p>
-              )}
+              {/* footer: citizen + score */}
+              <div className="flex items-center justify-between mt-2">
+                {item.citizen_name ? (
+                  <p
+                    className="text-xs font-mono"
+                    style={{ color: "var(--fg-secondary)" }}
+                  >
+                    — {item.citizen_name}
+                  </p>
+                ) : <span />}
+                {item.impact_score != null && (
+                  <span
+                    className="text-[10px] font-bold font-mono px-2 py-0.5 rounded-full"
+                    style={{
+                      background: item.impact_score >= 70 ? "rgba(239,68,68,0.1)" : item.impact_score >= 40 ? "rgba(245,158,11,0.1)" : "rgba(59,130,246,0.1)",
+                      color: item.impact_score >= 70 ? "var(--accent-crimson)" : item.impact_score >= 40 ? "var(--accent-amber)" : "var(--accent-blue)",
+                    }}
+                  >
+                    {item.impact_score}/100
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}
