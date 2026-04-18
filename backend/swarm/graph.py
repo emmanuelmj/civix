@@ -99,29 +99,37 @@ def _get_pinecone_service():
 
 
 async def _generate_embedding(text: str) -> list[float] | None:
-    """Generate a 1024-dim embedding using GitHub Models API."""
-    api_key = os.environ.get("GITHUB_MODELS_API_KEY", "")
-    base_url = os.environ.get(
-        "GITHUB_MODELS_BASE_URL",
-        "https://models.github.ai/orgs/imperialorg/inference",
-    )
-    if not api_key or api_key.startswith("ghp_placeholder"):
+    """Generate a 1024-dim embedding using Cohere embed-english-v3.0.
+    Must match Dev 1's ingestion model for cosine similarity to work."""
+    api_key = os.environ.get("COHERE_API_KEY", "")
+    if not api_key:
+        logger.warning("[Auditor] No COHERE_API_KEY — skipping embedding")
         return None
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
-                f"{base_url}/embeddings",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": "text-embedding-3-small", "input": text, "dimensions": 1024},
+                "https://api.cohere.com/v2/embed",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "embed-english-v3.0",
+                    "texts": [text],
+                    "input_type": "search_query",
+                    "embedding_types": ["float"],
+                },
             )
             if resp.status_code == 200:
                 data = resp.json()
-                return data["data"][0]["embedding"]
+                embedding = data["embeddings"]["float"][0]
+                logger.info(f"[Auditor] Cohere embedding generated ({len(embedding)} dims)")
+                return embedding
             else:
-                logger.warning(f"[Auditor] Embedding API returned {resp.status_code}")
+                logger.warning(f"[Auditor] Cohere API returned {resp.status_code}: {resp.text[:200]}")
                 return None
     except Exception as e:
-        logger.warning(f"[Auditor] Embedding generation failed: {e}")
+        logger.warning(f"[Auditor] Cohere embedding failed: {e}")
         return None
 
 
