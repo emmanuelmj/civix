@@ -18,6 +18,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { T } from './constants/theme';
 import PhoneFrame from './components/PhoneFrame';
 import { healthCheck, updateOfficerLocation, verifyResolution, fetchOfficerTasks } from './services/api';
+import LoginScreen from './components/LoginScreen';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 // Default coordinates (Hyderabad center) used when officer has no location
@@ -800,46 +801,6 @@ function InfoRow({ label, value, valueColor }) {
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' }}>
       <Text style={{ fontSize: 11, fontWeight: '600', color: T.textSecondary, letterSpacing: 1.5 }}>{label}</Text>
       <Text style={{ fontSize: 13, fontWeight: '700', color: valueColor || T.text }}>{value}</Text>
-    </View>
-  );
-}
-
-function LoginScreen({ onLogin }) {
-  const [officerId, setOfficerId] = useState('');
-  const [pin, setPin]             = useState('');
-  return (
-    <View style={s.loginRoot}>
-      <View style={s.loginCard}>
-        <View style={[s.logoRow, { marginBottom: 2 }]}>
-          <Text style={s.logoText}>CIVIX</Text>
-          <View style={s.logoDot} />
-        </View>
-        <Text style={s.loginSubBrand}>COMMAND CENTER</Text>
-        <Text style={s.loginHeading}>Official Administrator Login</Text>
-        <Text style={s.loginFieldLabel}>OFFICER ID</Text>
-        <TextInput
-          style={s.loginInput}
-          placeholder="e.g. OP-101"
-          placeholderTextColor="#9CA3AF"
-          value={officerId}
-          onChangeText={setOfficerId}
-          autoCapitalize="characters"
-        />
-        <Text style={s.loginFieldLabel}>SECURE PIN</Text>
-        <TextInput
-          style={s.loginInput}
-          placeholder="Enter your PIN"
-          placeholderTextColor="#9CA3AF"
-          value={pin}
-          onChangeText={setPin}
-          secureTextEntry
-          keyboardType="numeric"
-        />
-        <TouchableOpacity style={s.loginBtn} onPress={onLogin} activeOpacity={0.88}>
-          <Text style={s.loginBtnText}>SECURE LOGIN</Text>
-        </TouchableOpacity>
-        <Text style={s.loginFootnote}>Restricted Government Access Only. Activity is logged.</Text>
-      </View>
     </View>
   );
 }
