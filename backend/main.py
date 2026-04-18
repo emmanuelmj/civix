@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 try:
@@ -358,6 +359,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Static uploads (verification photos etc.) — reachable at /uploads/* ───
+import os as _os
+from pathlib import Path as _Path
+_uploads_dir = _Path(__file__).parent / "uploads"
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
+
 # ---------------------------------------------------------------------------
 # Request / Response Schemas
 # ---------------------------------------------------------------------------
@@ -683,6 +691,30 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
     logger.info(f"Verification from {payload.officer_id} for event {payload.event_id}")
     has_photo = payload.photo_base64 is not None and len(payload.photo_base64) > 0
 
+    # ── Persist photo to disk so it can be served to n8n / dashboard ──
+    import base64
+    import os
+    from pathlib import Path
+    photo_path_rel: str | None = None
+    photo_url: str | None = None
+    if has_photo:
+        try:
+            uploads_dir = Path(__file__).parent / "uploads" / "verification"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            raw = payload.photo_base64
+            if raw.startswith("data:"):
+                # strip "data:image/jpeg;base64,"
+                raw = raw.split(",", 1)[-1]
+            img_bytes = base64.b64decode(raw)
+            fname = f"{payload.event_id}_{int(time.time())}.jpg"
+            fpath = uploads_dir / fname
+            fpath.write_bytes(img_bytes)
+            photo_path_rel = f"verification/{fname}"
+            photo_url = f"/uploads/{photo_path_rel}"
+            logger.info(f"[Verify] Saved photo ({len(img_bytes)}B) → {photo_path_rel}")
+        except Exception as e:
+            logger.warning(f"[Verify] Could not persist photo: {e}")
+
     # Fetch original event description for LLM verification context
     event_description = ""
     event_domain = ""
@@ -724,6 +756,7 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
             "RESOLVED",
             resolution_verified=True,
             resolved_at=datetime.now(timezone.utc),
+            verification_image=photo_url,
         )
         await insert_dispatch_log(
             event_id=payload.event_id,
@@ -738,7 +771,7 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
     # Broadcast resolution to Command Center
     await manager.broadcast({
         "event_type": "RESOLUTION_VERIFIED",
-        "data": verification_result,
+        "data": {**verification_result, "photo_url": photo_url},
     })
 
     return {
@@ -746,6 +779,8 @@ async def officer_verify_resolution(payload: VerifyResolutionRequest) -> dict[st
         "verified": verification_result["verified"],
         "confidence": verification_result["confidence"],
         "reasoning": verification_result.get("reasoning", ""),
+        "photo_url": photo_url,
+        "photo_path": photo_path_rel,
         "message": f"Event {payload.event_id} verified and closed.",
     }
 

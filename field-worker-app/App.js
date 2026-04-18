@@ -470,20 +470,13 @@ export default function App() {
 
       // ── 4: VERIFICATION ──────────────────────────────────────────────────
       case 4:
-        // ── Web-first guard: skip all camera APIs on web ───────────────────
+        // ── Web branch: real browser getUserMedia camera ──────────────────
         if (Platform.OS === 'web' && verifyPhase === 'camera') {
           return (
-            <View style={s.camFallback}>
-              <View style={s.camFallbackFrame}>
-                <View style={s.camCornerTL} /><View style={s.camCornerTR} />
-                <View style={s.camCornerBL} /><View style={s.camCornerBR} />
-                <Text style={s.camFallbackIcon}>📷</Text>
-                <Text style={s.camFallbackText}>Camera disabled for Web Demo.</Text>
-              </View>
-              <TouchableOpacity style={s.simBtn} onPress={() => handleCaptureSuccess(null)} activeOpacity={0.85}>
-                <Text style={s.simBtnText}>SIMULATE CAPTURE (WEB DEMO)</Text>
-              </TouchableOpacity>
-            </View>
+            <WebCameraCapture
+              onCapture={(base64Uri) => handleCaptureSuccess(base64Uri)}
+              onCancel={() => setVerifyPhase('idle')}
+            />
           );
         }
 
@@ -1097,3 +1090,138 @@ const s = StyleSheet.create({
     color: T.text,
   },
 });
+
+// ─── Web-only live camera using browser getUserMedia ─────────────────────
+// Renders a <video> preview and captures a still via <canvas.toDataURL>.
+// Only mounts when Platform.OS === 'web'.
+function WebCameraCapture({ onCapture, onCancel }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [error, setError] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function start() {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        setError('Browser does not support camera access.');
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current.play().then(() => setReady(true)).catch(() => setReady(true));
+          };
+        }
+      } catch (e) {
+        setError(e?.message || 'Camera permission denied.');
+      }
+    }
+    start();
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  const snap = () => {
+    if (!videoRef.current || !canvasRef.current || capturing) return;
+    setCapturing(true);
+    const v = videoRef.current;
+    const c = canvasRef.current;
+    c.width = v.videoWidth || 640;
+    c.height = v.videoHeight || 480;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL('image/jpeg', 0.7);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    onCapture(dataUrl);
+  };
+
+  // Fallback UI — permission denied / unsupported
+  if (error) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={{ fontSize: 40, marginBottom: 12 }}>📷</Text>
+        <Text style={{ color: '#fff', fontSize: 15, textAlign: 'center', marginBottom: 4 }}>
+          Camera unavailable
+        </Text>
+        <Text style={{ color: '#aaa', fontSize: 12, textAlign: 'center', marginBottom: 22 }}>
+          {error}
+        </Text>
+        <TouchableOpacity
+          style={{ backgroundColor: T.accent, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 8, marginBottom: 10 }}
+          onPress={() => onCapture(null)}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 1 }}>
+            SIMULATE CAPTURE
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCancel}>
+          <Text style={{ color: '#888', fontSize: 12 }}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#000', position: 'relative' }}>
+      {/* React Native Web passes any element via "dangerouslySetInnerHTML"-style
+          escape hatch — so we drop directly to DOM via createElement in web. */}
+      {Platform.OS === 'web' && React.createElement('video', {
+        ref: videoRef,
+        autoPlay: true,
+        playsInline: true,
+        muted: true,
+        style: {
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          background: '#000',
+        },
+      })}
+      {Platform.OS === 'web' && React.createElement('canvas', {
+        ref: canvasRef,
+        style: { display: 'none' },
+      })}
+
+      {!ready && (
+        <View style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={{ color: '#fff', marginTop: 10, fontSize: 12 }}>Starting camera…</Text>
+        </View>
+      )}
+
+      {/* Shutter button + cancel */}
+      <View style={{ position: 'absolute', bottom: 28, left: 0, right: 0, alignItems: 'center' }}>
+        <TouchableOpacity onPress={snap} disabled={!ready || capturing} activeOpacity={0.85}
+          style={{
+            width: 72, height: 72, borderRadius: 36, backgroundColor: '#fff',
+            borderWidth: 4, borderColor: 'rgba(255,255,255,0.5)', alignItems: 'center', justifyContent: 'center',
+            opacity: ready ? 1 : 0.4,
+          }}
+        >
+          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: capturing ? '#aaa' : '#fff', borderWidth: 2, borderColor: '#000' }} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onCancel} style={{ marginTop: 14 }}>
+          <Text style={{ color: '#fff', fontSize: 12, letterSpacing: 1 }}>CANCEL</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
