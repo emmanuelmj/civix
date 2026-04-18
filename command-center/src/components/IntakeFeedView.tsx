@@ -23,8 +23,7 @@ type Domain =
   | "EMERGENCY"
   | "WATER"
   | "ELECTRICITY"
-  | "CONSTRUCTION"
-  | "GENERAL";
+  | "CONSTRUCTION";
 
 interface DomainStyle {
   text: string;
@@ -38,7 +37,16 @@ const DOMAIN_STYLES: Record<Domain, DomainStyle> = {
   ELECTRICITY:  { text: "text-amber-600",  bg: "bg-amber-50" },
   MUNICIPAL:    { text: "text-indigo-600", bg: "bg-indigo-50" },
   CONSTRUCTION: { text: "text-stone-600",  bg: "bg-stone-100" },
-  GENERAL:      { text: "text-slate-600",  bg: "bg-slate-100" },
+};
+
+// Normalize raw domain strings to canonical Domain
+const DOMAIN_NORMALIZE: Record<string, Domain> = {
+  MUNICIPAL: "MUNICIPAL", SANITATION: "MUNICIPAL", GARBAGE: "MUNICIPAL",
+  TRAFFIC: "TRAFFIC", ROAD: "TRAFFIC", ROADS: "TRAFFIC", TRANSPORT: "TRAFFIC",
+  WATER: "WATER", WATER_SUPPLY: "WATER", SEWAGE: "WATER",
+  ELECTRICITY: "ELECTRICITY", POWER: "ELECTRICITY", ELECTRICAL: "ELECTRICITY",
+  CONSTRUCTION: "CONSTRUCTION", BUILDING: "CONSTRUCTION",
+  EMERGENCY: "EMERGENCY", FIRE: "EMERGENCY", SAFETY: "EMERGENCY",
 };
 
 const ISSUE_DOMAIN_MAP: Record<string, Domain> = {
@@ -46,21 +54,46 @@ const ISSUE_DOMAIN_MAP: Record<string, Domain> = {
   garbage: "MUNICIPAL",
   streetlight: "MUNICIPAL",
   sewage: "MUNICIPAL",
+  manhole: "MUNICIPAL",
+  footpath: "MUNICIPAL",
+  stray: "MUNICIPAL",
+  mosquito: "MUNICIPAL",
+  dustbin: "MUNICIPAL",
+  waste: "MUNICIPAL",
+  sweeping: "MUNICIPAL",
+  park: "MUNICIPAL",
   traffic: "TRAFFIC",
   signal: "TRAFFIC",
   accident: "TRAFFIC",
+  road: "TRAFFIC",
+  pothole: "TRAFFIC",
+  congestion: "TRAFFIC",
+  parking: "TRAFFIC",
   fire: "EMERGENCY",
   flood: "EMERGENCY",
   collapse: "EMERGENCY",
   emergency: "EMERGENCY",
+  blast: "EMERGENCY",
+  explosion: "EMERGENCY",
   water: "WATER",
   pipeline: "WATER",
   "low pressure": "WATER",
+  pipe: "WATER",
+  leak: "WATER",
+  tap: "WATER",
+  borewell: "WATER",
+  drainage: "WATER",
   electricity: "ELECTRICITY",
   power: "ELECTRICITY",
   outage: "ELECTRICITY",
+  transformer: "ELECTRICITY",
+  wire: "ELECTRICITY",
+  voltage: "ELECTRICITY",
+  blackout: "ELECTRICITY",
   construction: "CONSTRUCTION",
   building: "CONSTRUCTION",
+  demolition: "CONSTRUCTION",
+  encroachment: "CONSTRUCTION",
 };
 
 const CHANNEL_DOMAIN_MAP: Partial<Record<IntakeFeedItem["channel"], Domain>> = {
@@ -69,13 +102,32 @@ const CHANNEL_DOMAIN_MAP: Partial<Record<IntakeFeedItem["channel"], Domain>> = {
 };
 
 function resolveDomain(item: IntakeFeedItem): Domain {
+  // 1. Use actual domain from backend if available
+  if (item.domain) {
+    const normalized = DOMAIN_NORMALIZE[item.domain.toUpperCase()];
+    if (normalized) return normalized;
+  }
+
+  // 2. Infer from issue_type keywords
   if (item.issue_type) {
     const key = item.issue_type.toLowerCase();
     for (const [keyword, domain] of Object.entries(ISSUE_DOMAIN_MAP)) {
       if (key.includes(keyword)) return domain;
     }
   }
-  return CHANNEL_DOMAIN_MAP[item.channel] ?? "GENERAL";
+
+  // 3. Infer from description text
+  const text = (item.translated_text || item.original_text || "").toLowerCase();
+  for (const [keyword, domain] of Object.entries(ISSUE_DOMAIN_MAP)) {
+    if (text.includes(keyword)) return domain;
+  }
+
+  // 4. Infer from channel
+  const channelDomain = CHANNEL_DOMAIN_MAP[item.channel];
+  if (channelDomain) return channelDomain;
+
+  // 5. Default to MUNICIPAL (catch-all civic department)
+  return "MUNICIPAL";
 }
 
 /* ── helpers ─────────────────────────────────────────────────── */

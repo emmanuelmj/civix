@@ -61,6 +61,7 @@ export interface IntakeFeedItem {
   citizen_name?: string;
   citizen_id?: string;
   issue_type?: string;
+  domain?: string;
   panic_flag?: boolean;
   sentiment_score?: number;
   impact_score?: number;
