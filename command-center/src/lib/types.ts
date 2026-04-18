@@ -17,7 +17,7 @@ export interface Officer {
 export interface PulseEvent {
   event_id: string;
   status: "NEW" | "ANALYZING" | "DISPATCHED" | "IN_PROGRESS" | "RESOLVED";
-  coordinates: Coordinates;
+  coordinates?: Coordinates;
   severity_color: string;
   severity: "standard" | "high" | "critical";
   domain: "Municipal" | "Traffic" | "Construction" | "Emergency" | "Water" | "Electricity";

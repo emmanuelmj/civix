@@ -18,7 +18,7 @@ interface AgentCanvasProps {
   status?: string;
 }
 
-export function AgentCanvas({ events, logs, status = "mock" }: AgentCanvasProps) {
+export function AgentCanvas({ events, logs, status = "live" }: AgentCanvasProps) {
   const analysisLogs = logs.filter(l => l.type === "analysis");
   const dispatchLogs = logs.filter(l => l.type === "dispatch");
   const verifyLogs = logs.filter(l => l.type === "verification");
@@ -45,7 +45,7 @@ export function AgentCanvas({ events, logs, status = "mock" }: AgentCanvasProps)
     {
       id: "priority",
       label: "Priority Logic Agent",
-      sublabel: "LLM Impact Matrix (Nemotron 120B)",
+      sublabel: "LLM Impact Matrix (GPT-4.1)",
       icon: "◔",
       status: analysisLogs.length > 0 ? "done" : "idle",
       color: "var(--accent-crimson)",
@@ -176,7 +176,7 @@ export function AgentCanvas({ events, logs, status = "mock" }: AgentCanvasProps)
           <div className="space-y-3">
             {[
               { name: "Systemic Auditor", desc: "Pinecone vector similarity", logs: analysisLogs.length, color: "var(--accent-amber)" },
-              { name: "Priority Agent", desc: "OpenRouter LLM scoring", logs: analysisLogs.length, color: "var(--accent-crimson)" },
+              { name: "Priority Agent", desc: "GPT-4.1 impact scoring", logs: analysisLogs.length, color: "var(--accent-crimson)" },
               { name: "Dispatch Agent", desc: "Spatial officer matching", logs: dispatchLogs.length, color: "var(--accent-blue)" },
               { name: "Verification Agent", desc: "Photo + feedback loop", logs: verifyLogs.length, color: "var(--accent-green)" },
             ].map(agent => (

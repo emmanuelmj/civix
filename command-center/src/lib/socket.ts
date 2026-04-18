@@ -44,7 +44,7 @@ function mapRealBackendDispatch(payload: Record<string, unknown>): PulseEvent {
   return {
     event_id: (pe.event_id as string) || crypto.randomUUID(),
     status: off ? "DISPATCHED" : "ANALYZING",
-    coordinates: coords || { lat: 17.385, lng: 78.4867 },
+    coordinates: coords,
     severity_color: severityColor,
     severity: colorToSeverity(severityColor),
     domain: normalizeDomain(pe.category as string),
@@ -86,7 +86,7 @@ function mapGenericEvent(raw: Record<string, unknown>): PulseEvent {
   return {
     event_id: (raw.event_id as string) || crypto.randomUUID(),
     status: (raw.status as PulseEvent["status"]) || "NEW",
-    coordinates: coords || { lat: 17.385, lng: 78.4867 },
+    coordinates: coords,
     severity_color: severityColor,
     severity: raw.severity
       ? (raw.severity as PulseEvent["severity"])
@@ -361,13 +361,16 @@ export function usePulseStream(): UsePulseStreamReturn {
 
 function mapDbEventToPulseEvent(dbEvent: Record<string, unknown>): PulseEvent {
   const severityColor = (dbEvent.severity_color as string) || "#FFA500";
+  const lat = dbEvent.latitude as number | null | undefined;
+  const lng = dbEvent.longitude as number | null | undefined;
+  const coordinates =
+    typeof lat === "number" && typeof lng === "number"
+      ? { lat, lng }
+      : undefined;
   return {
     event_id: (dbEvent.event_id as string) || crypto.randomUUID(),
     status: (dbEvent.status as PulseEvent["status"]) || "NEW",
-    coordinates: {
-      lat: (dbEvent.latitude as number) || 17.385,
-      lng: (dbEvent.longitude as number) || 78.4867,
-    },
+    coordinates,
     severity_color: severityColor,
     severity: colorToSeverity(severityColor),
     domain: normalizeDomain(dbEvent.domain as string),
@@ -398,6 +401,12 @@ function mapDbEventToPulseEvent(dbEvent: Record<string, unknown>): PulseEvent {
 }
 
 function mapDbEventToIntake(dbEvent: Record<string, unknown>): IntakeFeedItem {
+  const lat = dbEvent.latitude as number | null | undefined;
+  const lng = dbEvent.longitude as number | null | undefined;
+  const coordinates =
+    typeof lat === "number" && typeof lng === "number"
+      ? { lat, lng }
+      : undefined;
   return {
     id: `intake-${dbEvent.event_id}`,
     channel: ((dbEvent.source as string) || "portal") as IntakeFeedItem["channel"],
@@ -406,10 +415,7 @@ function mapDbEventToIntake(dbEvent: Record<string, unknown>): IntakeFeedItem {
     timestamp: dbEvent.created_at
       ? new Date(dbEvent.created_at as string).getTime()
       : Date.now(),
-    coordinates: {
-      lat: (dbEvent.latitude as number) || 17.385,
-      lng: (dbEvent.longitude as number) || 78.4867,
-    },
+    coordinates,
     citizen_name: dbEvent.citizen_name as string | undefined,
     citizen_id: dbEvent.citizen_id as string | undefined,
     issue_type: dbEvent.issue_type as string | undefined,
@@ -478,35 +484,28 @@ export async function triggerAnalysis(): Promise<{
   }
 }
 
-// ── Single Demo Trigger — sends one specific complaint through full pipeline ──
-
+// ── Single Demo Trigger — fires ONE real event through the LangGraph
+//    swarm (server-side). Backend generates a realistic complaint; no
+//    hardcoded payload on the client. ─────────────────────────────────
 export async function triggerSingleDemo(): Promise<{
   ok: boolean;
   message: string;
 }> {
-  const demoPayload = {
-    event_id: `demo-pulse-${Date.now().toString(36)}`,
-    translated_description:
-      "Massive water pipe burst flooding the main intersection near the school.",
-    domain: "MUNICIPAL",
-    coordinates: { lat: 17.4482, lng: 78.3914 },
-  };
-
   try {
-    const res = await fetch(`${API_URL}/api/v1/trigger-analysis`, {
+    const res = await fetch(`${API_URL}/api/v1/trigger-swarm?count=1`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(demoPayload),
     });
     if (!res.ok) {
       return { ok: false, message: `Backend returned ${res.status}` };
     }
     const data = await res.json();
-    const score = data?.data?.pulse_event?.impact_score ?? "—";
-    const officer = data?.data?.assigned_officer?.name ?? data?.data?.assigned_officer?.officer_id ?? "None";
+    const first = Array.isArray(data?.results) ? data.results[0] : null;
+    if (!first) {
+      return { ok: false, message: "No event fired." };
+    }
     return {
       ok: true,
-      message: `Score ${score} → ${officer}`,
+      message: `Event ${String(first.event_id).slice(0, 8)} → score ${first.score ?? "—"}`,
     };
   } catch {
     return { ok: false, message: "Backend unreachable." };
@@ -534,5 +533,105 @@ export async function triggerRescan(): Promise<{ ok: boolean; message: string }>
     return { ok: true, message: "Rescan triggered" };
   } catch {
     return { ok: false, message: "Backend unreachable." };
+  }
+}
+
+// ── Analytics fetchers (PostgreSQL-backed) ────────────────────────
+
+export interface DepartmentAnalytics {
+  domain: string;
+  total_events: number;
+  resolved: number;
+  sla_compliance_pct: number | null;
+  avg_resolution_minutes: number | null;
+  avg_impact_score: number;
+  cluster_resolution_pct: number;
+  satisfaction: number;
+}
+
+export interface KpiAnalytics {
+  total_events: number;
+  resolved: number;
+  in_progress: number;
+  dispatched: number;
+  new: number;
+  avg_resolution_minutes: number | null;
+  avg_impact_score: number;
+  clusters_found: number;
+  unique_officers_active: number;
+}
+
+export interface TimelinePoint {
+  day: string;
+  events: number;
+  resolved: number;
+}
+
+export interface ChannelCount {
+  source: string;
+  count: number;
+}
+
+export interface InfraNode {
+  id: string;
+  label: string;
+  domain: string;
+  lat: number;
+  lng: number;
+  event_count: number;
+}
+
+export async function fetchAnalyticsDepartments(): Promise<DepartmentAnalytics[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/analytics/departments`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json.data as DepartmentAnalytics[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchAnalyticsKpis(): Promise<KpiAnalytics | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/analytics/kpis`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json.data as KpiAnalytics) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAnalyticsTimeline(days = 7): Promise<TimelinePoint[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/analytics/timeline?days=${days}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json.data as TimelinePoint[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchAnalyticsChannels(): Promise<ChannelCount[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/analytics/channels`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json.data as ChannelCount[]) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchGraphInfrastructure(): Promise<InfraNode[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/v1/graph/infrastructure`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return (json.data as InfraNode[]) ?? [];
+  } catch {
+    return [];
   }
 }

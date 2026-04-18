@@ -63,7 +63,10 @@ export function MapLayer({ events, officers = [], onEventClick, onViewDetails }:
     const ml = mlRef.current;
     if (!map || !ml || !readyRef.current) return;
 
-    const currentEvents = eventsRef.current;
+    const currentEvents = eventsRef.current.filter(
+      (e): e is typeof e & { coordinates: { lat: number; lng: number } } =>
+        !!e.coordinates,
+    );
 
     // Build GeoJSON for event dots
     const eventFeatures: GeoJSON.Feature[] = currentEvents.map((e) => ({

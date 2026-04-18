@@ -1,0 +1,1887 @@
+{
+  "updatedAt": "2026-04-18T01:25:35.720Z",
+  "createdAt": "2026-04-17T23:39:29.080Z",
+  "id": "42FtMzpPb3j7IHd5",
+  "name": "Civix-Pulse: Chatbot v7 (Upstash Sessions)",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c2bc264e-5690-462d-b1ff-7c5762404075",
+      "name": "Webhook GET (Verification)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1440,
+        48
+      ],
+      "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "id": "b1ec4a08-ad9f-4ee6-9b88-9f3c110ccb21",
+      "name": "Respond to Webhook (Verification)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1200,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "730f64a6-24f2-4874-93d5-9d052f42a7e2",
+      "name": "WhatsApp Webhook POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1440,
+        256
+      ],
+      "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "e81d5e0a-531c-437e-a2cf-ed35d12aa0f5",
+      "name": "Respond 200 to Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1200,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nif (!body || !body.entry || !body.entry[0]) return [{ json: { skip: true } }];\nconst entry = body.entry[0];\nconst change = entry.changes[0];\nconst value = change.value;\nif (!value.messages || !value.messages[0]) return [{ json: { skip: true } }];\nconst message = value.messages[0];\nconst contact = value.contacts[0];\nreturn [{ json: {\n  phone: contact.wa_id,\n  name: contact.profile.name,\n  message_type: message.type,\n  text: message.text?.body || null,\n  audio_id: message.audio?.id || null,\n  image_id: message.image?.id || null,\n  image_caption: message.image?.caption || null,\n  latitude: message.location?.latitude || null,\n  longitude: message.location?.longitude || null,\n  timestamp: message.timestamp,\n  skip: false\n} }];"
+      },
+      "id": "d54d244f-e06a-4b25-ab22-488738060afb",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6b111077-e08a-4bcb-bf50-84876cb1fecd",
+      "name": "Skip Status Updates",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// SESSION MANAGER v7 - Upstash Redis Persistence\n// Works in test webhook mode\n// ============================================\n\nconst UPSTASH_URL = 'https://clever-seal-100902.upstash.io';\nconst UPSTASH_TOKEN = 'gQAAAAAAAYomAAIocDIwY2E4MDY1ZmVkMWQ0M2ZhODM0ZWQ1OTZmODI5OGEyZHAyMTAwOTAy';\nconst PHOTO_REQUIRED = ['Pothole', 'Waterlogging', 'Garbage', 'Flooding', 'Road Blockage', 'Sewage Overflow', 'Water Leakage', 'Construction Hazard', 'Live Wire'];\n\nconst data = $input.first().json;\nconst phone = data.phone;\nconst sessionKey = 'civix_session_' + phone;\n\n// ---- Helper: Get session from Upstash ----\nasync function getSession() {\n  try {\n    const res = await $http.request({\n      method: 'GET',\n      url: `${UPSTASH_URL}/get/${sessionKey}`,\n      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }\n    });\n    const body = typeof res === 'string' ? JSON.parse(res) : res;\n    if (body.result && body.result !== null) {\n      return JSON.parse(body.result);\n    }\n    return null;\n  } catch(e) {\n    return null;\n  }\n}\n\n// ---- Helper: Save session to Upstash (TTL 1 hour) ----\nasync function saveSession(sessionData) {\n  try {\n    await $http.request({\n      method: 'POST',\n      url: `${UPSTASH_URL}/set/${sessionKey}`,\n      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },\n      body: JSON.stringify({ value: JSON.stringify(sessionData), ex: 3600 })\n    });\n  } catch(e) {}\n}\n\n// ---- Helper: Delete session from Upstash ----\nasync function deleteSession() {\n  try {\n    await $http.request({\n      method: 'GET',\n      url: `${UPSTASH_URL}/del/${sessionKey}`,\n      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }\n    });\n  } catch(e) {}\n}\n\n// ============================================\n// MAIN LOGIC\n// ============================================\nconst session = await getSession();\n\n// ==========================================\n// NO ACTIVE SESSION\n// ==========================================\nif (!session) {\n  if (data.message_type === 'location') {\n    return [{ json: { ...data, chat_action: 'orphan_location' } }];\n  }\n  if (data.message_type === 'text' && data.text && data.text.trim().split(/\\s+/).length < 3) {\n    return [{ json: { ...data, chat_action: 'spam' } }];\n  }\n  return [{ json: { ...data, chat_action: 'new_complaint' } }];\n}\n\n// ==========================================\n// PHASE: awaiting_location\n// ==========================================\nif (session.phase === 'awaiting_location') {\n  if (data.message_type === 'location') {\n    session.partial_pulse.location.latitude = data.latitude;\n    session.partial_pulse.location.longitude = data.longitude;\n    session.partial_pulse.location.source = 'native_pin';\n    const needsPhoto = PHOTO_REQUIRED.includes(session.partial_pulse.ai_analysis.issue_type);\n    if (needsPhoto) {\n      session.phase = 'awaiting_photo';\n      await saveSession(session);\n      return [{ json: { phone: data.phone, name: data.name, issue_type: session.partial_pulse.ai_analysis.issue_type, chat_action: 'ask_photo' } }];\n    } else {\n      const pulse = { ...session.partial_pulse, chat_action: 'complete' };\n      await deleteSession();\n      return [{ json: pulse }];\n    }\n  }\n  if (data.message_type === 'text' && data.text) {\n    session.partial_pulse.location.provided_text = data.text;\n    session.partial_pulse.location.geocode_query = data.text + ', Hyderabad, India';\n    const needsPhoto = PHOTO_REQUIRED.includes(session.partial_pulse.ai_analysis.issue_type);\n    if (needsPhoto) {\n      session.phase = 'awaiting_photo';\n      await saveSession(session);\n      return [{ json: { phone: data.phone, name: data.name, issue_type: session.partial_pulse.ai_analysis.issue_type, chat_action: 'ask_photo' } }];\n    } else {\n      const pulse = { ...session.partial_pulse, chat_action: 'geocode_then_complete' };\n      await deleteSession();\n      return [{ json: pulse }];\n    }\n  }\n  return [{ json: { phone: data.phone, name: data.name, chat_action: 'remind_location' } }];\n}\n\n// ==========================================\n// PHASE: awaiting_photo\n// ==========================================\nif (session.phase === 'awaiting_photo') {\n  if (data.message_type === 'image') {\n    session.partial_pulse.multimodal_urls.image_url = 'https://graph.facebook.com/v19.0/' + data.image_id;\n    const pulse = { ...session.partial_pulse, chat_action: 'complete' };\n    await deleteSession();\n    return [{ json: pulse }];\n  }\n  if (data.message_type === 'text' && data.text && data.text.toLowerCase().trim() === 'skip') {\n    const pulse = { ...session.partial_pulse, chat_action: 'complete' };\n    await deleteSession();\n    return [{ json: pulse }];\n  }\n  return [{ json: { phone: data.phone, name: data.name, chat_action: 'remind_photo' } }];\n}\n\nreturn [{ json: { ...data, chat_action: 'new_complaint' } }];"
+      },
+      "id": "75f3085c-ec61-439f-808e-993615fafec4",
+      "name": "Session Manager",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "new_complaint",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "new"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "NewComplaint"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "complete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "complete"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "geocode_then_complete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "geocode"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "GeocodeComplete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "ask_photo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ask_photo"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "AskPhoto"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "remind_photo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "remind_photo"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RemindPhoto"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "remind_location",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "remind_location"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RemindLocation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "spam",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "spam"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Spam"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.chat_action }}",
+                    "rightValue": "orphan_location",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "orphan"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "OrphanLocation"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "af740cf5-884b-4e51-94c4-fc8907030737",
+      "name": "Chat Action Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -240,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "text"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "audio"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "image"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4e4b8ec4-862d-47a9-9cfe-1fd0d196e25c",
+      "name": "Media Type Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        0,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.audio_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4cea34f0-508f-4eb9-86ac-ef5ddc8cbb87",
+      "name": "Get Audio URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "e10f0232-3875-4635-9429-f87e47426f20",
+      "name": "Download Audio File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer gsk_REDACTED"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2d6c89ed-c2b7-413e-b096-44fe722afb20",
+      "name": "Groq Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.image_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0b372baf-043c-4642-9752-26f8f1ae8918",
+      "name": "Get Image URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "8c323c3c-8835-4092-94e7-276e00e83041",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaryData = $input.first().binary?.data;\nif (!binaryData) return [{ json: { base64Image: null, mimeType: null } }];\nreturn [{ json: { base64Image: binaryData.data, mimeType: binaryData.mimeType || 'image/jpeg' } }];"
+      },
+      "id": "327f9b88-8700-4432-a5a6-4bcb4caadd6a",
+      "name": "Convert Image to Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-or-v1-REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://civix-pulse.app"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"model\":\"meta-llama/llama-3.2-11b-vision-instruct:free\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Describe the municipal or infrastructure issue visible in this image in one detailed sentence. Focus on: road condition, water, electricity, construction, or emergency hazards. If no issue is visible, respond: No issue detected.\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:{{ $json.mimeType }};base64,{{ $json.base64Image }}\"}}]}],\"max_tokens\":200}",
+        "options": {}
+      },
+      "id": "e40c8ed9-87f2-4a9b-8314-cd96cc4a5636",
+      "name": "OpenRouter Vision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nif (data.text && typeof data.text === 'string' && !data.choices) return [{ json: { unified_text: data.text, source_type: 'text' } }];\nif (data.choices && data.choices[0]) return [{ json: { unified_text: data.choices[0].message.content, source_type: 'image' } }];\nreturn [{ json: { unified_text: 'No content extracted', source_type: 'unknown' } }];"
+      },
+      "id": "fabe3aa9-d723-4728-9dc5-e6d1501d00f9",
+      "name": "Merge to Unified Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer gsk_REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI classifier for Civix-Pulse in Hyderabad, India. Classify the complaint and respond ONLY with valid JSON, no markdown: {\\\"translated_description\\\": \\\"...\\\", \\\"domain\\\": \\\"MUNICIPAL|TRAFFIC|CONSTRUCTION|EMERGENCY\\\", \\\"issue_type\\\": \\\"Pothole|Waterlogging|Water Leakage|Live Wire|Road Blockage|Garbage|Flooding|Power Outage|Sewage Overflow|Construction Hazard|Other\\\", \\\"sentiment_score\\\": 5, \\\"panic_flag\\\": false, \\\"location_hint\\\": \\\"\\\", \\\"needs_photo\\\": true}\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"={{ $json.unified_text }}\"\n    }\n  ],\n  \"temperature\": 0.1,\n  \"max_tokens\": 400,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {}
+      },
+      "id": "8d0d00ba-fe4e-46e7-9e77-805388d54606",
+      "name": "Groq Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Partial Pulse + Save to Upstash\nconst UPSTASH_URL = 'https://clever-seal-100902.upstash.io';\nconst UPSTASH_TOKEN = 'gQAAAAAAAYomAAIocDIwY2E4MDY1ZmVkMWQ0M2ZhODM0ZWQ1OTZmODI5OGEyZHAyMTAwOTAy';\n\nconst classifyOutput = $input.first().json;\nconst rawData = $('Extract Message Data').first().json;\n\nlet ai;\ntry {\n  ai = JSON.parse(classifyOutput.choices[0].message.content.replace(/```json|```/g,'').trim());\n} catch(e) {\n  ai = { translated_description: 'Unable to parse', domain: 'MUNICIPAL', issue_type: 'Unknown', sentiment_score: 5, panic_flag: false, location_hint: '', needs_photo: false };\n}\n\nconst uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r=Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); });\n\nconst partialPulse = {\n  event_id: uuid(),\n  timestamp: new Date().toISOString(),\n  source: 'whatsapp',\n  citizen_id: rawData.phone,\n  citizen_name: rawData.name || '',\n  raw_input: rawData.text || (rawData.audio_id ? 'Voice note' : rawData.image_id ? 'Image' : 'Unknown'),\n  multimodal_urls: {\n    image_url: rawData.image_id ? 'https://graph.facebook.com/v19.0/' + rawData.image_id : null,\n    audio_url: rawData.audio_id ? 'https://graph.facebook.com/v19.0/' + rawData.audio_id : null\n  },\n  ai_analysis: {\n    translated_description: ai.translated_description,\n    domain: ai.domain,\n    issue_type: ai.issue_type,\n    sentiment_score: ai.sentiment_score,\n    panic_flag: ai.panic_flag,\n    location_hint: ai.location_hint || '',\n    needs_photo: ai.needs_photo\n  },\n  location: {\n    provided_text: rawData.text || null,\n    latitude: null,\n    longitude: null,\n    location_hint: ai.location_hint || ''\n  },\n  embed_text: ai.translated_description\n};\n\n// Save session to Upstash with 1 hour TTL\nconst sessionKey = 'civix_session_' + rawData.phone;\nconst sessionData = {\n  phase: 'awaiting_location',\n  partial_pulse: partialPulse,\n  created_at: new Date().toISOString()\n};\n\ntry {\n  await $http.request({\n    method: 'SET',\n    url: `${UPSTASH_URL}/set/${sessionKey}/EX/3600`,\n    headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },\n    body: JSON.stringify(JSON.stringify(sessionData))\n  });\n} catch(e) {\n  // Fallback — try simpler set\n  try {\n    await $http.request({\n      method: 'POST',\n      url: `${UPSTASH_URL}/set/${sessionKey}`,\n      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}`, 'Content-Type': 'application/json' },\n      body: JSON.stringify({ value: JSON.stringify(sessionData) })\n    });\n  } catch(e2) {}\n}\n\nreturn [{ json: { ...partialPulse, chat_action: 'ask_location' } }];"
+      },
+      "id": "e2e6fbe5-c589-4a49-836a-b4b12ba88d8e",
+      "name": "Build Partial Pulse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.citizen_id }}\",\"type\":\"text\",\"text\":{\"body\":\"Got it! We've recorded your complaint about *{{ $json.ai_analysis.issue_type }}*. \\n\\n📍 Please *drop your location pin* or type the area/landmark name.\\n\\n_(Tap the attachment icon > Location in WhatsApp)_\"}}",
+        "options": {}
+      },
+      "id": "83997a5b-4aff-4833-bb57-be0c4f2ee2fe",
+      "name": "Ask for Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"📸 Location recorded! Now please send a *photo* of the *{{ $json.issue_type }}* issue.\\n\\n_(Type *skip* if you cannot take a photo right now)_\"}}",
+        "options": {}
+      },
+      "id": "a06c50ac-4108-41ff-9ca7-989aee21c71d",
+      "name": "Ask for Photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"📸 Please send a *photo* of the issue or type *skip* to proceed without one.\"}}",
+        "options": {}
+      },
+      "id": "c2cb2e24-fa28-44ff-97c1-8a0657850ce0",
+      "name": "Remind Photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"📍 Please share your location — drop a pin or type the area name.\"}}",
+        "options": {}
+      },
+      "id": "bedfad8a-21d6-4ea4-b031-6a5478d6a9e8",
+      "name": "Remind Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"👋 Welcome to Civix-Pulse!\\n\\nPlease describe your civic issue in detail, send a voice note, or share a photo.\"}}",
+        "options": {}
+      },
+      "id": "568d17dd-bbfd-4f08-9a0d-6912d4be2860",
+      "name": "Spam Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"Please describe your issue first before sharing a location.\"}}",
+        "options": {}
+      },
+      "id": "a147d284-d779-4b1f-99fa-78009ac22c86",
+      "name": "Orphan Location Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://nominatim.openstreetmap.org/search?q={{ encodeURIComponent($json.location.geocode_query || ($json.location.location_hint + ', Hyderabad, India')) }}&format=json&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "CivixPulse/1.0"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6076d953-b122-4c8d-af5f-d47a00cd15d6",
+      "name": "Geocode Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geoResults = $input.first().json;\nconst pulse = $('Chat Action Router').first().json;\n\nif (Array.isArray(geoResults) && geoResults.length > 0) {\n  pulse.location.latitude = parseFloat(geoResults[0].lat);\n  pulse.location.longitude = parseFloat(geoResults[0].lon);\n  pulse.location.geocoded = true;\n  pulse.location.geocode_display = geoResults[0].display_name;\n} else {\n  pulse.location.geocoded = false;\n}\n\nreturn [{ json: pulse }];"
+      },
+      "id": "a4376267-5ae8-4b1c-93f9-0bdc4026f940",
+      "name": "Merge Geocode",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "civix-raw",
+          "mode": "list",
+          "cachedResultName": "civix-raw"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        960,
+        256
+      ],
+      "id": "68389487-39cc-4528-9c30-151eb97fafdb",
+      "name": "Pinecone Vector Store",
+      "credentials": {
+        "pineconeApi": {
+          "id": "TSNKNM0TTqTRMxqj",
+          "name": "Pinecone account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "embed-english-v3.0"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsCohere",
+      "typeVersion": 1,
+      "position": [
+        864,
+        480
+      ],
+      "id": "f93ef54f-c584-4fec-add7-e63e75f6e705",
+      "name": "Embeddings Cohere",
+      "credentials": {
+        "cohereApi": {
+          "id": "Xj1TtpyJZcQXNEp6",
+          "name": "Cohere account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.embed_text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "event_id",
+                "value": "={{ $json.event_id }}"
+              },
+              {
+                "name": "domain",
+                "value": "={{ $json.ai_analysis.domain }}"
+              },
+              {
+                "name": "issue_type",
+                "value": "={{ $json.ai_analysis.issue_type }}"
+              },
+              {
+                "name": "citizen_id",
+                "value": "={{ $json.citizen_id }}"
+              },
+              {
+                "name": "citizen_name",
+                "value": "={{ $json.citizen_name || '' }}"
+              },
+              {
+                "name": "sentiment_score",
+                "value": "={{ $json.ai_analysis.sentiment_score }}"
+              },
+              {
+                "name": "panic_flag",
+                "value": "={{ String($json.ai_analysis.panic_flag) }}"
+              },
+              {
+                "name": "timestamp",
+                "value": "={{ $json.timestamp }}"
+              },
+              {
+                "name": "translated_description",
+                "value": "={{ $json.ai_analysis.translated_description }}"
+              },
+              {
+                "name": "raw_input",
+                "value": "={{ $json.raw_input || '' }}"
+              },
+              {
+                "name": "latitude",
+                "value": "={{ $json.location.latitude || 0 }}"
+              },
+              {
+                "name": "longitude",
+                "value": "={{ $json.location.longitude || 0 }}"
+              },
+              {
+                "name": "location_hint",
+                "value": "={{ $json.location.location_hint || '' }}"
+              },
+              {
+                "name": "image_url",
+                "value": "={{ $json.multimodal_urls.image_url || '' }}"
+              },
+              {
+                "name": "audio_url",
+                "value": "={{ $json.multimodal_urls.audio_url || '' }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        1072,
+        480
+      ],
+      "id": "b34a0e7d-21fd-46a6-8c9c-97d27777c2e2",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.citizen_id }}\",\"type\":\"text\",\"text\":{\"body\":\"✅ *Complaint Logged Successfully!*\\n\\n🆔 ID: {{ $json.event_id.slice(0,8).toUpperCase() }}\\n📋 Issue: {{ $json.ai_analysis.issue_type }}\\n🏷️ Category: {{ $json.ai_analysis.domain }}\\n⚡ Priority: {{ $json.ai_analysis.sentiment_score >= 8 ? 'CRITICAL 🔴' : $json.ai_analysis.sentiment_score >= 5 ? 'HIGH 🟠' : 'STANDARD 🟢' }}\\n📍 Location: {{ $json.location.location_hint || $json.location.provided_text || 'Recorded' }}\\n\\nA crew will be dispatched shortly. Thank you! 🙏\"}}",
+        "options": {}
+      },
+      "id": "c2904eb5-0879-49a0-92d0-9b61ae08e9cb",
+      "name": "Confirmation Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "appodvNHj2TD6eAXx",
+          "mode": "list",
+          "cachedResultName": "CivixPulse",
+          "cachedResultUrl": "https://airtable.com/appodvNHj2TD6eAXx"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblxKtti6ueDomiil",
+          "mode": "list",
+          "cachedResultName": "Grievances",
+          "cachedResultUrl": "https://airtable.com/appodvNHj2TD6eAXx/tblxKtti6ueDomiil"
+        },
+        "options": {}
+      },
+      "id": "752f7579-00c9-44f7-8849-aaa779b60dfa",
+      "name": "Airtable Lookup (OPEN)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -1168,
+        -160
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "QuaSfGET3N6E5DtA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $items().length }}",
+              "operator": {
+                "type": "number",
+                "operation": "larger",
+                "value2": 0
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0c14efb3-0d50-4aef-9140-5f68eef446e2",
+      "name": "Open Record Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = $('Extract Message Data').first().json;\nconst existing = $input.first().json?.fields || null;\n\nif (!existing) {\n  return [{ json: {\n    phone: incoming.phone,\n    translated_description: incoming.text,\n    latitude: incoming.latitude,\n    longitude: incoming.longitude,\n    image_url: incoming.image_id ? 'https://graph.facebook.com/v19.0/' + incoming.image_id : null,\n    raw_input: incoming.text,\n    mode: 'create'\n  }}];\n}\n\nreturn [{ json: {\n  id: $input.first().json.id,\n  phone: existing.phone,\n  translated_description: existing.translated_description || incoming.text,\n  latitude: existing.latitude || incoming.latitude,\n  longitude: existing.longitude || incoming.longitude,\n  image_url: existing.image_url || (incoming.image_id ? 'https://graph.facebook.com/v19.0/' + incoming.image_id : null),\n  raw_input: (existing.raw_input || '') + '\\n---\\n' + (incoming.text || 'media'),\n  mode: 'update'\n}}];"
+      },
+      "id": "9d457e86-a751-47db-b66c-3a082f89c20e",
+      "name": "Merge Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -688,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appodvNHj2TD6eAXx",
+          "mode": "list",
+          "cachedResultName": "CivixPulse",
+          "cachedResultUrl": "https://airtable.com/appodvNHj2TD6eAXx"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblxKtti6ueDomiil",
+          "mode": "list",
+          "cachedResultName": "Grievances",
+          "cachedResultUrl": "https://airtable.com/appodvNHj2TD6eAXx/tblxKtti6ueDomiil"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": null,
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "15be3399-6bf6-4dc0-bea7-f8993aee1532",
+      "name": "Create Airtable Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        -16
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "QuaSfGET3N6E5DtA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "appodvNHj2TD6eAXx",
+          "mode": "list",
+          "cachedResultName": "CivixPulse",
+          "cachedResultUrl": "https://airtable.com/appodvNHj2TD6eAXx"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblxKtti6ueDomiil",
+          "mode": "list",
+          "cachedResultName": "Grievances",
+          "cachedResultUrl": "https://airtable.com/appodvNHj2TD6eAXx/tblxKtti6ueDomiil"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "panic_flag": false,
+            "needs_photo": false,
+            "sentiment_score": 0,
+            "latitude": 0,
+            "longitude": 0
+          },
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Open",
+                  "value": "Open"
+                },
+                {
+                  "name": "Closed",
+                  "value": "Closed"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "issue_type",
+              "displayName": "issue_type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "translated_description",
+              "displayName": "translated_description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "sentiment_score",
+              "displayName": "sentiment_score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "panic_flag",
+              "displayName": "panic_flag",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "needs_photo",
+              "displayName": "needs_photo",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "location_text",
+              "displayName": "location_text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "latitude",
+              "displayName": "latitude",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "longitude",
+              "displayName": "longitude",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "audio_url",
+              "displayName": "audio_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "raw_input",
+              "displayName": "raw_input",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "event_id",
+              "displayName": "event_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "829fb8e9-f48e-4700-ab16-e9771f7bea46",
+      "name": "Update Airtable Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        -240
+      ],
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "QuaSfGET3N6E5DtA",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst missing = [];\nif (!d.latitude || !d.longitude) missing.push('location');\nif (!d.image_url) missing.push('photo');\nreturn [{ json: { ...d, missing_fields: missing } }];"
+      },
+      "id": "30e65626-c61f-4bee-8747-a821a919a793",
+      "name": "Missing Fields Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.missing_fields.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "equal",
+                "value2": 0
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4b4f9327-7d5e-410b-8cdf-5e1e5cc01dd6",
+      "name": "Is Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -160
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook GET (Verification)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Verification)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Webhook POST": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 to Meta",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Skip Status Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Status Updates": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Airtable Lookup (OPEN)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Manager": {
+      "main": [
+        []
+      ]
+    },
+    "Chat Action Router": {
+      "main": [
+        [
+          {
+            "node": "Media Type Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Geocode Location",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Remind Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Remind Location",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Spam Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Orphan Location Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Media Type Router": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Audio URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio URL": {
+      "main": [
+        [
+          {
+            "node": "Download Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio File": {
+      "main": [
+        [
+          {
+            "node": "Groq Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Whisper": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Image URL": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Convert Image to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Image to Base64": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Vision": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge to Unified Text": {
+      "main": [
+        [
+          {
+            "node": "Groq Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Classification": {
+      "main": [
+        [
+          {
+            "node": "Build Partial Pulse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Partial Pulse": {
+      "main": [
+        [
+          {
+            "node": "Ask for Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geocode Location": {
+      "main": [
+        [
+          {
+            "node": "Merge Geocode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Geocode": {
+      "main": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Cohere": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Confirmation Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Lookup (OPEN)": {
+      "main": [
+        [
+          {
+            "node": "Open Record Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open Record Exists?": {
+      "main": [
+        [
+          {
+            "node": "Merge Engine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Engine": {
+      "main": [
+        [
+          {
+            "node": "Update Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Missing Fields Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Missing Fields Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Missing Fields Check": {
+      "main": [
+        [
+          {
+            "node": "Is Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Complete?": {
+      "main": [
+        [
+          {
+            "node": "Chat Action Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "b2d2632c-80f7-4c75-9574-c55bcf6e1a95",
+  "activeVersionId": null,
+  "versionCounter": 30,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-17T23:39:29.083Z",
+      "createdAt": "2026-04-17T23:39:29.083Z",
+      "role": "workflow:owner",
+      "workflowId": "42FtMzpPb3j7IHd5",
+      "projectId": "3JsxL7LAcIm0kUQh",
+      "project": {
+        "updatedAt": "2026-04-17T12:01:35.419Z",
+        "createdAt": "2026-04-17T11:58:51.598Z",
+        "id": "3JsxL7LAcIm0kUQh",
+        "name": "Aditya T <teentechindia@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "46d3a616-af80-4367-86ea-aeebc4fccd4f"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

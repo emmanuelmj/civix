@@ -26,6 +26,7 @@ export function Topbar({ onMenuToggle }: { onMenuToggle?: () => void }) {
         {/* Mobile menu button */}
         <button
           onClick={onMenuToggle}
+          aria-label="Open navigation menu"
           className="lg:hidden flex items-center justify-center w-8 h-8 rounded-md"
           style={{ color: "var(--fg-secondary)" }}
         >

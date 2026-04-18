@@ -7,6 +7,8 @@ export type TabId =
   | "Intake Feed"
   | "Swarm Log"
   | "Agent Canvas"
+  | "Knowledge Graph"
+  | "Leaderboard"
   | "Reports"
   | "Analytics"
   | "Officers"

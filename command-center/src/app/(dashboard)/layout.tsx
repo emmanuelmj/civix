@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import { DashboardProvider } from "@/lib/dashboard-context";
+import { PulseProvider } from "@/lib/pulse-context";
 
 export default function DashboardLayout({
   children,
@@ -14,6 +15,7 @@ export default function DashboardLayout({
 
   return (
     <DashboardProvider>
+      <PulseProvider>
       <div className="flex h-screen overflow-hidden">
         {/* Mobile overlay */}
         {sidebarOpen && (
@@ -22,7 +24,7 @@ export default function DashboardLayout({
 
         {/* Sidebar — hidden on mobile, fixed on desktop */}
         <div className={`
-          fixed inset-y-0 left-0 z-30 transition-transform duration-200
+          fixed inset-y-0 left-0 w-52 z-30 transition-transform duration-200
           lg:translate-x-0
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
         `}>
@@ -36,6 +38,7 @@ export default function DashboardLayout({
           </main>
         </div>
       </div>
+      </PulseProvider>
     </DashboardProvider>
   );
 }

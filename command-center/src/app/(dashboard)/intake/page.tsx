@@ -1,13 +1,9 @@
 "use client";
 
-import { IngestionFeed } from "@/components/IngestionFeed";
+import { IntakeFeedView } from "@/components/IntakeFeedView";
 import { usePulse } from "@/lib/pulse-context";
 
-export default function IntakeFeedPage() {
+export default function IntakePage() {
   const { intake } = usePulse();
-  return (
-    <div className="h-full flex flex-col" style={{ background: "var(--bg-card)" }}>
-      <IngestionFeed items={intake} />
-    </div>
-  );
+  return <IntakeFeedView items={intake} />;
 }

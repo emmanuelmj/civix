@@ -2,12 +2,13 @@
 
 import { createContext, useContext } from "react";
 import { usePulseStream, type ConnectionStatus } from "@/lib/socket";
-import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "@/lib/types";
+import type { PulseEvent, SwarmLogEntry, IntakeFeedItem, Officer } from "@/lib/types";
 
 interface PulseContextValue {
   events: PulseEvent[];
   logs: SwarmLogEntry[];
   intake: IntakeFeedItem[];
+  officers: Officer[];
   status: ConnectionStatus;
 }
 
@@ -15,6 +16,7 @@ const PulseContext = createContext<PulseContextValue>({
   events: [],
   logs: [],
   intake: [],
+  officers: [],
   status: "connecting",
 });
 

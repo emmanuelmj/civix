@@ -1,43 +1,36 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import type { PulseEvent } from "@/lib/types";
+import { fetchAnalyticsDepartments, type DepartmentAnalytics } from "@/lib/socket";
 
-// Mock department data derived from events
 interface DepartmentStats {
   name: string;
   domain: string;
   totalEvents: number;
   resolved: number;
-  avgResolutionMin: number;
-  slaCompliance: number;
+  avgResolutionMin: number | null;
+  slaCompliance: number | null;
   satisfaction: number;
   clusterResolution: number;
 }
 
-const DEPARTMENTS = ["Municipal", "Traffic", "Water", "Electricity", "Sewage", "Safety"] as const;
+function toTitle(domain: string): string {
+  if (!domain) return "Unknown";
+  return domain.charAt(0).toUpperCase() + domain.slice(1).toLowerCase();
+}
 
-function deriveDepartmentStats(events: PulseEvent[]): DepartmentStats[] {
-  return DEPARTMENTS.map((dept) => {
-    const deptEvents = events.filter(
-      (e) => e.domain?.toUpperCase() === dept.toUpperCase() ||
-             (dept === "Municipal" && !DEPARTMENTS.slice(1).some(d => e.domain?.toUpperCase() === d.toUpperCase()))
-    );
-    const total = Math.max(deptEvents.length, 1);
-    const resolved = deptEvents.filter((e) => e.status === "RESOLVED").length;
-    // Generate plausible stats
-    const seed = dept.charCodeAt(0);
-    return {
-      name: `${dept} Services`,
-      domain: dept,
-      totalEvents: total,
-      resolved,
-      avgResolutionMin: Math.round(15 + (seed % 45)),
-      slaCompliance: Math.round(65 + (seed % 30)),
-      satisfaction: parseFloat((3.2 + ((seed * 7) % 18) / 10).toFixed(1)),
-      clusterResolution: Math.round(50 + (seed % 40)),
-    };
-  }).sort((a, b) => b.slaCompliance - a.slaCompliance);
+function toStats(rows: DepartmentAnalytics[]): DepartmentStats[] {
+  return rows.map((r) => ({
+    name: `${toTitle(r.domain)} Services`,
+    domain: r.domain,
+    totalEvents: r.total_events,
+    resolved: r.resolved,
+    avgResolutionMin: r.avg_resolution_minutes,
+    slaCompliance: r.sla_compliance_pct,
+    satisfaction: r.satisfaction,
+    clusterResolution: r.cluster_resolution_pct,
+  }));
 }
 
 function RankBadge({ rank }: { rank: number }) {
@@ -67,18 +60,37 @@ function MeterBar({ value, max, color }: { value: number; max: number; color: st
 }
 
 interface LeaderboardProps {
-  events: PulseEvent[];
+  // Kept for API compatibility; real data comes from backend analytics endpoint.
+  events?: PulseEvent[];
 }
 
-export function Leaderboard({ events }: LeaderboardProps) {
-  const departments = useMemo(() => deriveDepartmentStats(events), [events]);
+export function Leaderboard(_props: LeaderboardProps) {
+  void _props;
+  const [departments, setDepartments] = useState<DepartmentStats[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const rows = await fetchAnalyticsDepartments();
+      if (active) setDepartments(toStats(rows));
+    };
+    load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      active = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  const loading = departments === null;
+  const rows = departments ?? [];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--border-light)" }}>
         <h2 className="text-sm font-semibold" style={{ color: "var(--fg-primary)" }}>Department Leaderboard</h2>
         <p className="text-[10px] font-mono mt-0.5" style={{ color: "var(--fg-muted)" }}>
-          Ranked by SLA compliance · Updated in real-time
+          Ranked by SLA compliance · Updated every 30s
         </p>
       </div>
 
@@ -95,45 +107,80 @@ export function Leaderboard({ events }: LeaderboardProps) {
 
       {/* Rows */}
       <div className="flex-1 overflow-y-auto">
-        {departments.map((dept, i) => (
-          <div key={dept.domain}
-            className="grid grid-cols-[40px_1fr_80px_80px_70px_80px] gap-2 px-4 py-3 items-center border-b transition-colors hover:brightness-[0.98]"
-            style={{ borderColor: "var(--border-light)", background: i === 0 ? "var(--accent-green-dim)" : "transparent" }}>
-            <RankBadge rank={i + 1} />
-            <div>
-              <p className="text-[12px] font-semibold" style={{ color: "var(--fg-primary)" }}>{dept.name}</p>
-              <p className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
-                {dept.totalEvents} events · {dept.resolved} resolved
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[12px] font-mono tabular-nums" style={{ color: "var(--fg-primary)" }}>
-                {dept.avgResolutionMin}m
-              </p>
-              <MeterBar value={60 - Math.min(dept.avgResolutionMin, 60)} max={60} color="var(--accent-blue)" />
-            </div>
-            <div className="text-right">
-              <p className="text-[12px] font-mono tabular-nums font-semibold"
-                style={{ color: dept.slaCompliance >= 80 ? "var(--accent-green)" : dept.slaCompliance >= 60 ? "var(--accent-amber)" : "var(--accent-crimson)" }}>
-                {dept.slaCompliance}%
-              </p>
-              <MeterBar value={dept.slaCompliance} max={100}
-                color={dept.slaCompliance >= 80 ? "var(--accent-green)" : dept.slaCompliance >= 60 ? "var(--accent-amber)" : "var(--accent-crimson)"} />
-            </div>
-            <div className="text-right">
-              <p className="text-[12px] font-mono tabular-nums" style={{ color: "var(--fg-primary)" }}>
-                {"★".repeat(Math.round(dept.satisfaction))}
-              </p>
-              <p className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>{dept.satisfaction}/5</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[12px] font-mono tabular-nums" style={{ color: "var(--fg-primary)" }}>
-                {dept.clusterResolution}%
-              </p>
-              <MeterBar value={dept.clusterResolution} max={100} color="var(--accent-blue)" />
-            </div>
+        {loading ? (
+          <div className="px-4 py-6 text-center text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
+            Loading department analytics…
           </div>
-        ))}
+        ) : rows.length === 0 ? (
+          <div className="px-4 py-6 text-center text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
+            No department data yet.
+          </div>
+        ) : (
+          rows.map((dept, i) => {
+            const sla = dept.slaCompliance;
+            const slaColor =
+              sla == null
+                ? "var(--fg-muted)"
+                : sla >= 80
+                  ? "var(--accent-green)"
+                  : sla >= 60
+                    ? "var(--accent-amber)"
+                    : "var(--accent-crimson)";
+            return (
+              <div
+                key={dept.domain}
+                className="grid grid-cols-[40px_1fr_80px_80px_70px_80px] gap-2 px-4 py-3 items-center border-b transition-colors hover:brightness-[0.98]"
+                style={{
+                  borderColor: "var(--border-light)",
+                  background: i === 0 ? "var(--accent-green-dim)" : "transparent",
+                }}
+              >
+                <RankBadge rank={i + 1} />
+                <div>
+                  <p className="text-[12px] font-semibold" style={{ color: "var(--fg-primary)" }}>
+                    {dept.name}
+                  </p>
+                  <p className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
+                    {dept.totalEvents} events · {dept.resolved} resolved
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[12px] font-mono tabular-nums" style={{ color: "var(--fg-primary)" }}>
+                    {dept.avgResolutionMin == null ? "—" : `${dept.avgResolutionMin}m`}
+                  </p>
+                  <MeterBar
+                    value={dept.avgResolutionMin == null ? 0 : 60 - Math.min(dept.avgResolutionMin, 60)}
+                    max={60}
+                    color="var(--accent-blue)"
+                  />
+                </div>
+                <div className="text-right">
+                  <p
+                    className="text-[12px] font-mono tabular-nums font-semibold"
+                    style={{ color: slaColor }}
+                  >
+                    {sla == null ? "—" : `${sla}%`}
+                  </p>
+                  <MeterBar value={sla ?? 0} max={100} color={slaColor} />
+                </div>
+                <div className="text-right">
+                  <p className="text-[12px] font-mono tabular-nums" style={{ color: "var(--fg-primary)" }}>
+                    {"★".repeat(Math.round(dept.satisfaction))}
+                  </p>
+                  <p className="text-[10px] font-mono" style={{ color: "var(--fg-muted)" }}>
+                    {dept.satisfaction}/5
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[12px] font-mono tabular-nums" style={{ color: "var(--fg-primary)" }}>
+                    {dept.clusterResolution}%
+                  </p>
+                  <MeterBar value={dept.clusterResolution} max={100} color="var(--accent-blue)" />
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

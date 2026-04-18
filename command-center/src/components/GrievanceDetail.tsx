@@ -94,9 +94,8 @@ export function GrievanceDetail({ event, onClose }: GrievanceDetailProps) {
   const sev = SEVERITY_MAP[event.severity];
   const domainColor = DOMAIN_COLOR[event.domain];
 
-  // Use real impact score from backend, fall back to severity-based estimate
-  const impactScore = event.impact_score
-    ?? (event.severity === "critical" ? 92 : event.severity === "high" ? 68 : 35);
+  // Use real impact score from backend (show — if missing; don't fabricate)
+  const impactScore = event.impact_score;
 
   // Close on Escape key
   useEffect(() => {
@@ -273,10 +272,10 @@ export function GrievanceDetail({ event, onClose }: GrievanceDetailProps) {
                     Impact Score
                   </span>
                   <span className="text-[11px] font-mono font-medium" style={{ color: sev.color }}>
-                    {impactScore}/100
+                    {impactScore == null ? "—" : `${impactScore}/100`}
                   </span>
                 </div>
-                <ProgressBar value={impactScore} color={sev.color} />
+                <ProgressBar value={impactScore ?? 0} color={sev.color} />
               </div>
 
               {/* Severity + Panic + Sentiment row */}

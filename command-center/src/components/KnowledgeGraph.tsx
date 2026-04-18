@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import type { PulseEvent } from "@/lib/types";
+import { fetchGraphInfrastructure, type InfraNode } from "@/lib/socket";
 
 // ---------------------------------------------------------------------------
 // Types for the graph
@@ -36,25 +37,25 @@ interface KnowledgeGraphProps {
 }
 
 // ---------------------------------------------------------------------------
-// Infrastructure & department seed data (Hyderabad-themed)
+// Dept label map (cosmetic only)
 // ---------------------------------------------------------------------------
-const INFRA_NODES: { id: string; label: string; domain: string }[] = [
-  { id: "infra-pump-7", label: "Pump Station 7 — Madhapur", domain: "Municipal" },
-  { id: "infra-feeder-3", label: "Feeder Zone 3 — Gachibowli", domain: "Emergency" },
-  { id: "infra-road-nh65", label: "NH-65 Stretch — Kondapur", domain: "Traffic" },
-  { id: "infra-drain-12", label: "Storm Drain 12 — Kukatpally", domain: "Municipal" },
-  { id: "infra-signal-41", label: "Signal Junction 41 — HITEC City", domain: "Traffic" },
-  { id: "infra-transformer-9", label: "Transformer 9 — Jubilee Hills", domain: "Emergency" },
-];
+const DEPT_LABEL: Record<string, string> = {
+  MUNICIPAL: "Municipal Corp",
+  TRAFFIC: "Traffic Management",
+  WATER: "Water & Sewage Dept",
+  ELECTRICITY: "Electrical Division",
+  CONSTRUCTION: "Roads & Bridges",
+  EMERGENCY: "Public Safety",
+};
 
-const DEPT_NODES: { id: string; label: string; domain: string }[] = [
-  { id: "dept-water", label: "Water & Sewage Dept", domain: "Municipal" },
-  { id: "dept-traffic", label: "Traffic Management", domain: "Traffic" },
-  { id: "dept-electrical", label: "Electrical Division", domain: "Emergency" },
-  { id: "dept-roads", label: "Roads & Bridges", domain: "Construction" },
-  { id: "dept-municipal", label: "Municipal Corp", domain: "Municipal" },
-  { id: "dept-safety", label: "Public Safety", domain: "Emergency" },
-];
+function deptLabel(domain: string): string {
+  const u = (domain || "UNKNOWN").toUpperCase();
+  return DEPT_LABEL[u] ?? (u.charAt(0) + u.slice(1).toLowerCase() + " Dept");
+}
+
+function deptId(domain: string): string {
+  return `dept-${(domain || "UNKNOWN").toUpperCase()}`;
+}
 
 const KIND_COLORS: Record<NodeKind, string> = {
   complaint: "#64748b",
@@ -64,31 +65,33 @@ const KIND_COLORS: Record<NodeKind, string> = {
   root_cause: "#dc2626",
 };
 
-// Deterministic pseudo-cluster assignment based on domain
-function getClusterInfra(domain: string): string {
-  const map: Record<string, string> = {
-    Municipal: "infra-pump-7",
-    Traffic: "infra-road-nh65",
-    Emergency: "infra-feeder-3",
-    Construction: "infra-road-nh65",
-  };
-  return map[domain] || "infra-pump-7";
-}
-
-function getDept(domain: string): string {
-  const map: Record<string, string> = {
-    Municipal: "dept-water",
-    Traffic: "dept-traffic",
-    Emergency: "dept-electrical",
-    Construction: "dept-roads",
-  };
-  return map[domain] || "dept-municipal";
+function nearestInfra(
+  ev: PulseEvent,
+  infra: InfraNode[],
+): InfraNode | null {
+  if (!ev.coordinates || infra.length === 0) return null;
+  const { lat, lng } = ev.coordinates;
+  let best: InfraNode | null = null;
+  let bestDist = Infinity;
+  for (const n of infra) {
+    const dx = n.lat - lat;
+    const dy = n.lng - lng;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) {
+      bestDist = d;
+      best = n;
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
 // Build graph from events
 // ---------------------------------------------------------------------------
-function buildGraph(events: PulseEvent[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
+function buildGraph(
+  events: PulseEvent[],
+  infraNodes: InfraNode[],
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const nodeMap = new Set<string>();
@@ -97,19 +100,23 @@ function buildGraph(events: PulseEvent[]): { nodes: GraphNode[]; edges: GraphEdg
     if (!nodeMap.has(n.id)) { nodeMap.add(n.id); nodes.push(n); }
   };
 
-  // Infra nodes
-  INFRA_NODES.forEach((inf) =>
+  // Infra nodes (from backend hotspots)
+  infraNodes.forEach((inf) =>
     add({ id: inf.id, label: inf.label, kind: "infrastructure", x: 0, y: 0, vx: 0, vy: 0, color: KIND_COLORS.infrastructure, radius: 14 })
   );
-  // Dept nodes
-  DEPT_NODES.forEach((d) =>
-    add({ id: d.id, label: d.label, kind: "department", x: 0, y: 0, vx: 0, vy: 0, color: KIND_COLORS.department, radius: 12 })
-  );
+
+  // Dept nodes — one per distinct domain in events
+  const domains = new Set(events.map((e) => (e.domain || "").toUpperCase()));
+  domains.forEach((d) => {
+    if (!d) return;
+    add({ id: deptId(d), label: deptLabel(d), kind: "department", x: 0, y: 0, vx: 0, vy: 0, color: KIND_COLORS.department, radius: 12 });
+  });
 
   // Complaint nodes + edges
   events.forEach((ev) => {
-    const infraId = getClusterInfra(ev.domain);
-    const deptId = getDept(ev.domain);
+    const infra = nearestInfra(ev, infraNodes);
+    const infraId = infra?.id;
+    const dId = deptId(ev.domain);
 
     add({
       id: ev.event_id,
@@ -122,8 +129,10 @@ function buildGraph(events: PulseEvent[]): { nodes: GraphNode[]; edges: GraphEdg
       clusterId: infraId,
     });
 
-    edges.push({ source: ev.event_id, target: infraId, relation: "affects", color: "rgba(202,138,4,0.35)" });
-    edges.push({ source: ev.event_id, target: deptId, relation: "assigned_to", color: "rgba(37,99,235,0.3)" });
+    if (infraId) {
+      edges.push({ source: ev.event_id, target: infraId, relation: "affects", color: "rgba(202,138,4,0.35)" });
+    }
+    edges.push({ source: ev.event_id, target: dId, relation: "assigned_to", color: "rgba(37,99,235,0.3)" });
 
     if (ev.assigned_officer) {
       const offId = `officer-${ev.assigned_officer.officer_id}`;
@@ -292,10 +301,21 @@ export function KnowledgeGraph({ events }: KnowledgeGraphProps) {
   const [collapsed, setCollapsed] = useState(true);
   const [hovered, setHovered] = useState<GraphNode | null>(null);
   const [selectedCluster, setSelectedCluster] = useState<string | null>(null);
+  const [infraNodes, setInfraNodes] = useState<InfraNode[]>([]);
   const sizeRef = useRef({ w: 800, h: 600 });
 
+  useEffect(() => {
+    let active = true;
+    fetchGraphInfrastructure().then((nodes) => {
+      if (active) setInfraNodes(nodes);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Build & layout graph
-  const rawGraph = useMemo(() => buildGraph(events), [events]);
+  const rawGraph = useMemo(() => buildGraph(events, infraNodes), [events, infraNodes]);
   const displayGraph = useMemo(
     () => (collapsed ? collapseGraph(rawGraph.nodes, rawGraph.edges) : rawGraph),
     [rawGraph, collapsed]
@@ -306,17 +326,18 @@ export function KnowledgeGraph({ events }: KnowledgeGraphProps) {
     const result: Record<string, string> = {};
     const clusters: Record<string, number> = {};
     events.forEach((ev) => {
-      const infraId = getClusterInfra(ev.domain);
-      clusters[infraId] = (clusters[infraId] || 0) + 1;
+      const infra = nearestInfra(ev, infraNodes);
+      if (!infra) return;
+      clusters[infra.id] = (clusters[infra.id] || 0) + 1;
     });
-    INFRA_NODES.forEach((inf) => {
+    infraNodes.forEach((inf) => {
       const count = clusters[inf.id] || 0;
       if (count >= 2) {
         result[`rc-${inf.id}`] = `Fixing ${inf.label} would likely resolve ${count} of these complaints.`;
       }
     });
     return result;
-  }, [events]);
+  }, [events, infraNodes]);
 
   // Initialize positions when graph changes
   useEffect(() => {

@@ -802,14 +802,14 @@ export function AnalyticsView({
           { label: "Intake Items", value: intake.length },
           {
             label: "Avg Response Time",
-            value:
-              events.length > 1
-                ? `${(
-                    (events[events.length - 1].timestamp - events[0].timestamp) /
-                    events.length /
-                    1000
-                  ).toFixed(1)}s`
-                : "—",
+            value: (() => {
+              const resolvedTtrs = events
+                .map((e) => (e.time_to_resolution ? parseTTRMinutes(e.time_to_resolution) : null))
+                .filter((v): v is number => v != null && v >= 0);
+              if (resolvedTtrs.length === 0) return "—";
+              const avg = resolvedTtrs.reduce((a, b) => a + b, 0) / resolvedTtrs.length;
+              return `${avg.toFixed(0)}m`;
+            })(),
           },
           {
             label: "Pipeline Throughput",

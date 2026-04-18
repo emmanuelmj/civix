@@ -109,7 +109,7 @@ export function AgentCanvasView({
   return (
     <>
       {/* Inline keyframes */}
-      <style jsx>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @keyframes glow-pulse {
           0%, 100% { box-shadow: 0 0 4px 1px currentColor; }
           50%      { box-shadow: 0 0 12px 4px currentColor; }
@@ -118,7 +118,7 @@ export function AgentCanvasView({
           0%, 100% { opacity: 0.45; }
           50%      { opacity: 0.8; }
         }
-      `}</style>
+      `}} />
 
       <div className="pt-8 pb-6 px-6 space-y-6">
         {/* ── Header ── */}

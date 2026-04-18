@@ -1,0 +1,1083 @@
+{
+  "updatedAt": "2026-04-17T17:21:56.166Z",
+  "createdAt": "2026-04-17T12:38:17.868Z",
+  "id": "CPbr9xgCLgD5ohkg",
+  "name": "Civix-Pulse: Omnichannel Intake v3 (OpenRouter + Gemini Embeddings)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d837fe9f-087e-474a-a999-bb30adfa3f44",
+      "name": "Webhook GET (Verification)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        2240,
+        272
+      ],
+      "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "id": "12793104-9f2a-434c-9534-ee6c0134f546",
+      "name": "Respond to Webhook (Verification)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2480,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "beb90443-670a-486c-9423-3540aef11104",
+      "name": "WhatsApp Webhook POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        2240,
+        480
+      ],
+      "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "d6046c69-8578-431b-8916-fcab8458bf14",
+      "name": "Respond 200 to Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2480,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nif (!body || !body.entry || !body.entry[0]) {\n  return [{ json: { skip: true } }];\n}\n\nconst entry = body.entry[0];\nconst change = entry.changes[0];\nconst value = change.value;\n\nif (!value.messages || !value.messages[0]) {\n  return [{ json: { skip: true } }];\n}\n\nconst message = value.messages[0];\nconst contact = value.contacts[0];\n\nreturn [{\n  json: {\n    phone: contact.wa_id,\n    name: contact.profile.name,\n    message_type: message.type,\n    text: message.text?.body || null,\n    audio_id: message.audio?.id || null,\n    image_id: message.image?.id || null,\n    image_caption: message.image?.caption || null,\n    latitude: message.location?.latitude || null,\n    longitude: message.location?.longitude || null,\n    timestamp: message.timestamp,\n    skip: false\n  }\n}];"
+      },
+      "id": "cab9d5b0-8187-46cb-b8f8-25f19adb62a3",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "206464a9-a846-44c6-b0d6-85d85072da06",
+      "name": "Skip Status Updates",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "spam-check",
+              "leftValue": "={{ $json.message_type === 'text' && $json.text && $json.text.trim().split(/\\s+/).length < 3 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2345a76c-9f42-4dba-879e-13756fbd5bd0",
+      "name": "Spam Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/YOUR_PHONE_NUMBER_ID/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_ACCESS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Welcome to Civix-Pulse. Please describe your issue in detail, send a photo, or drop a voice note.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "384b7c23-8dfd-4da4-8797-19adf8de8bc6",
+      "name": "Spam Auto-Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3440,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "99f5e2f1-531f-4c2a-819c-953bdd2cfa22"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "eb02d207-5acb-4f7c-9652-8575c2bb2b74"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "2897b2a2-9163-444a-aca0-cf171e354a62"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Image"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "location",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ccdf8e9c-9bde-4701-92ee-53ff83495d7b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Location"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0fe7f7dc-9f5d-489c-8420-06b18ac8d6d3",
+      "name": "Message Type Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        3440,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.audio_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "732d9f70-7ce4-485e-9f01-294fc73c301e",
+      "name": "Get Audio URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3680,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "11543102-36a6-424b-8909-dd1683684b2c",
+      "name": "Download Audio File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3920,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer  gsk_REDACTED"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "51822c35-9732-41f0-9625-65015a961951",
+      "name": "Groq Whisper Transcription",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4160,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.image_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "128ae26b-5fab-4107-a148-52c4941eb6cc",
+      "name": "Get Image URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3680,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_META_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "4e4beeb6-7ea4-4be6-ae06-eb08007d7455",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3920,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaryData = $input.first().binary?.data;\nif (!binaryData) {\n  return [{ json: { base64Image: null, mimeType: null } }];\n}\nconst base64 = binaryData.data;\nconst mimeType = binaryData.mimeType || 'image/jpeg';\nreturn [{ json: { base64Image: base64, mimeType: mimeType } }];"
+      },
+      "id": "f7c6e154-9eba-45ce-a4ca-9133ce5b615e",
+      "name": "Convert Image to Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-or-v1-REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://civix-pulse.app"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"model\": \"meta-llama/llama-3.2-11b-vision-instruct:free\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Describe the municipal or infrastructure issue visible in this image in one detailed sentence. Focus on: road condition, water, electricity, construction, or emergency hazards. If no issue is visible, respond with exactly: No issue detected.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.mimeType }};base64,{{ $json.base64Image }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"max_tokens\": 300\n}",
+        "options": {}
+      },
+      "id": "19ca6333-7ea4-4679-80bc-abf03562ca4d",
+      "name": "OpenRouter Vision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4400,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\n// From Text branch\nif (data.text && typeof data.text === 'string' && !data.choices && !data.candidates) {\n  return [{ json: { unified_text: data.text, source_type: 'text' } }];\n}\n\n// From Groq Whisper (returns { text: '...' })\nif (data.text && typeof data.text === 'string' && !data.choices) {\n  return [{ json: { unified_text: data.text, source_type: 'audio' } }];\n}\n\n// From OpenRouter Vision or Classification (OpenAI-compatible: choices[0].message.content)\nif (data.choices && data.choices[0]) {\n  const content = data.choices[0].message.content;\n  return [{ json: { unified_text: content, source_type: 'image' } }];\n}\n\n// Location pin drop\nif (data.latitude && data.longitude) {\n  return [{ json: { unified_text: 'Citizen dropped a location pin', source_type: 'location' } }];\n}\n\nreturn [{ json: { unified_text: 'No content extracted', source_type: 'unknown' } }];"
+      },
+      "id": "a0b41c09-08ed-4452-a03f-5bdc174b248f",
+      "name": "Merge to Unified Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4640,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer gsk_REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://civix-pulse.app"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"model\": \"llama-3.3-70b-versatile\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an AI classifier for Civix-Pulse, a smart city grievance system in Hyderabad, India. You will receive a citizen complaint in English, Telugu, Hindi, or mixed Hyderabadi slang. Your job: 1. Translate any local slang or regional language to formal English. 2. Score the emotional sentiment from 1-10 (10 = extreme panic or emergency). 3. Set panic_flag to true if score is 8 or above. 4. Classify domain strictly as one of: MUNICIPAL, TRAFFIC, CONSTRUCTION, EMERGENCY. 5. Identify a specific issue_type such as Pothole, Water Leakage, Live Wire, Road Blockage, Garbage, Flooding, Power Outage, Sewage Overflow. Respond ONLY with valid JSON, no extra text, no markdown, no backticks: {\\\"translated_description\\\": \\\"...\\\", \\\"domain\\\": \\\"...\\\", \\\"issue_type\\\": \\\"...\\\", \\\"sentiment_score\\\": 0, \\\"panic_flag\\\": false}\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"={{ $json.unified_text }}\"\n    }\n  ],\n  \"temperature\": 0.1,\n  \"max_tokens\": 500,\n  \"response_format\": { \"type\": \"json_object\" }\n}",
+        "options": {}
+      },
+      "id": "0d252101-2023-4973-aac7-849ba4c93c5c",
+      "name": "OpenRouter Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4880,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const classifyOutput = $input.first().json;\nconst extractedData = $('Extract Message Data').first().json;\n\nlet ai;\ntry {\n  const rawText = classifyOutput.choices[0].message.content;\n  const clean = rawText.replace(/```json|```/g, '').trim();\n  ai = JSON.parse(clean);\n} catch(e) {\n  ai = {\n    translated_description: 'Unable to parse complaint',\n    domain: 'MUNICIPAL',\n    issue_type: 'Unknown',\n    sentiment_score: 5,\n    panic_flag: false\n  };\n}\n\nconst uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n  const r = Math.random() * 16 | 0;\n  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n});\n\nlet rawInput = extractedData.text;\nif (!rawInput && extractedData.audio_id) rawInput = 'Voice note transcribed';\nif (!rawInput && extractedData.image_id) rawInput = 'Image received';\nif (!rawInput && extractedData.latitude) rawInput = 'Location pin dropped';\n\nconst pulseEvent = {\n  event_id: uuid(),\n  timestamp: new Date().toISOString(),\n  source: 'whatsapp',\n  citizen_id: extractedData.phone,\n  citizen_name: extractedData.name,\n  raw_input: rawInput,\n  multimodal_urls: {\n    image_url: extractedData.image_id ? `https://graph.facebook.com/v19.0/${extractedData.image_id}` : null,\n    audio_url: extractedData.audio_id ? `https://graph.facebook.com/v19.0/${extractedData.audio_id}` : null\n  },\n  ai_analysis: {\n    translated_description: ai.translated_description,\n    domain: ai.domain,\n    issue_type: ai.issue_type,\n    sentiment_score: ai.sentiment_score,\n    panic_flag: ai.panic_flag\n  },\n  location: {\n    provided_text: extractedData.text || null,\n    latitude: extractedData.latitude || null,\n    longitude: extractedData.longitude || null\n  },\n  embed_text: ai.translated_description\n};\n\nreturn [{ json: pulseEvent }];"
+      },
+      "id": "ad02608a-ec28-4272-938f-d997a810d296",
+      "name": "Build Pulse Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5120,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "location-check",
+              "leftValue": "={{ $json.location.latitude === null && $json.location.longitude === null && ($json.location.provided_text === null || $json.location.provided_text.trim().split(/\\s+/).length < 4) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0329aa29-43b1-47bb-b3c3-508cdd711464",
+      "name": "Location Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5376,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.citizen_id }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"We received your complaint about {{ $json.ai_analysis.issue_type }}. Please share your location or drop a pin so we can dispatch a crew.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "62d856a6-74b1-49c5-a0d9-de532c4ad0d0",
+      "name": "Ask for Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5488,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $('Build Pulse Event').first().json.citizen_id }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Complaint logged!\\n\\nID: {{ $('Build Pulse Event').first().json.event_id.slice(0,8).toUpperCase() }}\\nIssue: {{ $('Build Pulse Event').first().json.ai_analysis.issue_type }}\\nCategory: {{ $('Build Pulse Event').first().json.ai_analysis.domain }}\\nPriority: {{ $('Build Pulse Event').first().json.ai_analysis.sentiment_score >= 8 ? 'CRITICAL' : $('Build Pulse Event').first().json.ai_analysis.sentiment_score >= 5 ? 'HIGH' : 'STANDARD' }}\\n\\nWe are on it. You will be notified once resolved.\"\n  }\n}",
+        "options": {}
+      },
+      "id": "4b3e657a-d20f-4b30-b34a-fa0b63413e67",
+      "name": "Confirmation Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6736,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.embed_text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "event_id",
+                "value": "={{ $json.event_id }}"
+              },
+              {
+                "name": "domain",
+                "value": "={{ $json.ai_analysis.domain }}"
+              },
+              {
+                "name": "issue_type",
+                "value": "={{ $json.ai_analysis.issue_type }}"
+              },
+              {
+                "name": "citizen_id",
+                "value": "={{ $json.citizen_id }}"
+              },
+              {
+                "name": "citizen_name",
+                "value": "={{ $json.citizen_name || '' }}"
+              },
+              {
+                "name": "sentiment_score",
+                "value": "={{ $json.ai_analysis.sentiment_score }}"
+              },
+              {
+                "name": "panic_flag",
+                "value": "={{ String($json.ai_analysis.panic_flag) }}"
+              },
+              {
+                "name": "timestamp",
+                "value": "={{ $json.timestamp }}"
+              },
+              {
+                "name": "translated_description",
+                "value": "={{ $json.ai_analysis.translated_description }}"
+              },
+              {
+                "name": "raw_input",
+                "value": "={{ $json.raw_input || '' }}"
+              },
+              {
+                "name": "latitude",
+                "value": "={{ $json.location.latitude || 0 }}"
+              },
+              {
+                "name": "longitude",
+                "value": "={{ $json.location.longitude || 0 }}"
+              },
+              {
+                "name": "provided_text",
+                "value": "={{ $json.location.provided_text || '' }}"
+              },
+              {
+                "name": "image_url",
+                "value": "={{ $json.multimodal_urls.image_url || '' }}"
+              },
+              {
+                "name": "audio_url",
+                "value": "={{ $json.multimodal_urls.audio_url || '' }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        6112,
+        832
+      ],
+      "id": "86083ad5-4d42-4c64-98f4-083af6050b9f",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "civix",
+          "mode": "list",
+          "cachedResultName": "civix"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        6144,
+        592
+      ],
+      "id": "6e431e43-f8b4-4bda-a3a1-81f3fc243108",
+      "name": "Pinecone Vector Store1",
+      "credentials": {
+        "pineconeApi": {
+          "id": "TSNKNM0TTqTRMxqj",
+          "name": "Pinecone account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "embed-english-v3.0"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsCohere",
+      "typeVersion": 1,
+      "position": [
+        6016,
+        832
+      ],
+      "id": "c99754fe-5e1c-44c6-bbc5-937defa0822f",
+      "name": "Embeddings Cohere1",
+      "credentials": {
+        "cohereApi": {
+          "id": "Xj1TtpyJZcQXNEp6",
+          "name": "Cohere account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook GET (Verification)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Verification)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Webhook POST": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 to Meta",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Skip Status Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Status Updates": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Spam Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Spam Filter": {
+      "main": [
+        [
+          {
+            "node": "Spam Auto-Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message Type Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Type Router": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Audio URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio URL": {
+      "main": [
+        [
+          {
+            "node": "Download Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio File": {
+      "main": [
+        [
+          {
+            "node": "Groq Whisper Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Whisper Transcription": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Image URL": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Convert Image to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Image to Base64": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Vision": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge to Unified Text": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Classification": {
+      "main": [
+        [
+          {
+            "node": "Build Pulse Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pulse Event": {
+      "main": [
+        [
+          {
+            "node": "Location Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Location Check": {
+      "main": [
+        [
+          {
+            "node": "Ask for Location",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pinecone Vector Store1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Pinecone Vector Store1",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Cohere1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone Vector Store1": {
+      "main": [
+        [
+          {
+            "node": "Confirmation Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "4168f3ed-abed-41d9-9de8-00b9df4e1578",
+  "activeVersionId": "1d146101-736b-4a23-b6f3-6ee7df01a077",
+  "versionCounter": 230,
+  "triggerCount": 2,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-17T12:38:17.870Z",
+      "createdAt": "2026-04-17T12:38:17.870Z",
+      "role": "workflow:owner",
+      "workflowId": "CPbr9xgCLgD5ohkg",
+      "projectId": "3JsxL7LAcIm0kUQh",
+      "project": {
+        "updatedAt": "2026-04-17T12:01:35.419Z",
+        "createdAt": "2026-04-17T11:58:51.598Z",
+        "id": "3JsxL7LAcIm0kUQh",
+        "name": "Aditya T <teentechindia@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "46d3a616-af80-4367-86ea-aeebc4fccd4f"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

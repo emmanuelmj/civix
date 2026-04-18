@@ -6,6 +6,62 @@
 
 ---
 
+## ⚠️ Current State of Codebase (audit as of 2026-04-18)
+
+This section reflects what was **actually verified running** in the repo today. Where it contradicts the aspirational Q&A below, treat this section as authoritative.
+
+### What works end-to-end (verified)
+- **Backend** (FastAPI, `backend/main.py`) boots cleanly on `:8000`, lifespan brings up:
+  - **PostgreSQL** pool (min=2, max=10) → `civix_pulse` DB, 3 tables (`pulse_events`, `officers`, `dispatch_log`), 8 seed officers.
+  - **Pinecone** connected to index `civix-raw` — **76 vectors**, dim 1024, namespace `civix-events`.
+  - **LangGraph** pipeline compiled: `auditor → priority → amplifier → dispatch`.
+  - **Pinecone watcher** polling every 5 s, filtering by `status='NEW'`.
+- **n8n** running on `:5678` (`/healthz` ok). `omnichannel-intake/n8n-workflows/` in the repo is **empty (only `.gitkeep`)** — no committed workflows.
+- **Next.js command-center** on `:3000`, 10 routed pages all return HTTP 200 and hydrate.
+- **WebSocket** `/ws/dashboard` verified: PONG keepalive, per-event broadcast, fan-out to 3 concurrent clients, burst during `trigger-swarm`.
+- **Test results (with real `.env` loaded)**:
+  - `test_services.py` — Pinecone ✅ / Postgres ✅
+  - `test_integration.py` — **15 / 15** pass (keyword scorer active; LLM keys present but backend is using keyword fallback for scoring — see below)
+  - Full endpoint/WS/page suite — **35 / 36** pass (the one "fail" is a test-script key mismatch, not an app bug)
+
+### Divergences from the Q&A below
+| Q&A claim | Reality |
+|---|---|
+| `POST /api/v1/demo-burst?count=25` | **Endpoint does not exist.** OpenAPI only lists `trigger-analysis`, `trigger-swarm`, `webhook/new-event`. "Demo burst" is documentation fiction. |
+| "mock data has been completely removed" | **False.** See hardcoded-data audit below. |
+| LLM = Nemotron 120B via OpenRouter | `.env` has `GITHUB_MODELS_API_KEY` (gpt-4.1) + an OpenRouter fallback, but the running pipeline is logging `"No LLM API key configured — using keyword scorer"` for every event — the graph isn't picking up the env vars at runtime. Needs investigation (likely `load_dotenv()` cwd vs. uvicorn working dir). |
+| LangSmith tracing | Key present but returns **401 Unauthorized** on `/runs/multipart` — token invalid/expired. |
+| OpenAI `text-embedding-3-small` (1536 dims) | Index is **1024 dims** — embedding model is different. |
+| "20 officers in pool" | Schema seeds **8 officers**. |
+| 9 dashboard pages | **10 routed pages** exist (`analytics canvas graph intake leaderboard officers reports settings swarm-log` + `/`). Q&A list is stale. |
+| Pinecone index `civix-pulse-events` | Actual name: `civix-raw`. |
+
+### Hardcoded / fabricated data still in frontend
+Per the component-by-component audit:
+
+- **`components/Leaderboard.tsx`** — file comment `// Mock department data derived from events`. `DEPARTMENTS` const (6 names) + `deriveDepartmentStats()` seeds avg resolution, SLA %, satisfaction, cluster-resolution from `charCodeAt` of the department name. Only `totalEvents` and `resolved` come from backend.
+- **`components/ExecutiveReportsView.tsx`** — hardcoded "Avg Response Time ~14 m", `seededHeights` fake 7-day sparkline, bar array `[65,40,80,55,90,30,70]`, Budget Burn Rate `₹4.2 Cr / 62% / ₹1.6 Cr`.
+- **`components/KnowledgeGraph.tsx`** — `INFRA_NODES` (6 invented Hyderabad assets like "Pump Station 7 — Madhapur") and `DEPT_NODES` (6 invented departments). Mapping from complaint → infra/dept is `charCodeAt`-based, not real.
+- **`components/AgentCanvas.tsx`** — default prop `status = "mock"`. "Agent Health Matrix" list has hardcoded agent names/descriptions (counts are derived, labels are not).
+- **`components/GrievanceDetail.tsx`** — impact-score fallback `92 / 68 / 35` synthesized by severity when backend omits the field.
+- **`lib/socket.ts`** — default lat/lng fallback `{17.385, 78.4867}` (Hyderabad center) silently fabricated when an event has no coordinates. Also a demo-trigger payload for the now-mythical `triggerSingleDemo`.
+- Other components (`AnalyticsView`, `OfficersView`, `IntakeFeedView`, `SwarmLog`, `Reports`, `MapLayer`, `IngestionFeed`, `GrievanceDetail`, the two context files) only contain **configuration constants** (color maps, icon maps, DOMAIN → color). Those are fine.
+
+### Secrets & hygiene
+- `backend/.env` committed on disk with a real **GitHub PAT**, **Pinecone key**, **LangSmith key**, **OpenRouter key**. Not in git yet (untracked) — **rotate all of them** before anything is pushed. PAT was also pasted in plain chat history.
+- Old `claudecode-linux-x64` binary and `field-worker-app/.dart_tool/` / `android/` artifacts are untracked; consider gitignoring.
+
+### Open TODOs implied by this state
+1. Remove / replace mocks in **Leaderboard, ExecutiveReportsView, KnowledgeGraph, AgentCanvas, GrievanceDetail**, and the `socket.ts` coordinate/demo fallbacks — OR back them with new backend aggregation endpoints (suggested: `GET /api/v1/analytics/departments`, `GET /api/v1/analytics/kpis`, `GET /api/v1/graph/infrastructure`).
+2. Fix `.env` loading so the LangGraph nodes actually see `GITHUB_MODELS_API_KEY` (currently falling back to keyword scorer in-process).
+3. Either implement `POST /api/v1/demo-burst` or purge all references from docs/frontend.
+4. Commit a real n8n workflow JSON to `omnichannel-intake/n8n-workflows/` — currently only `.gitkeep`.
+5. Renew LangSmith token (401) or disable tracing.
+6. Reconcile embedding-dim claim: either re-create index with 1536-dim OpenAI embeddings or update docs to match the actual 1024-dim index.
+7. Update Q&A doc below: officer count (8 vs 20), page count (10 vs 9), index name (`civix-raw` vs `civix-pulse-events`), LLM provider (GitHub Models vs OpenRouter Nemotron).
+
+---
+
 ## A — Architecture
 
 **Q: Walk me through the system architecture.**

@@ -1,27 +1,36 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useDashboard, type TabId } from "@/lib/dashboard-context";
 
 interface SidebarProps {
   onNavigate?: () => void;
 }
 
-const navItems: { label: TabId; icon: string }[] = [
-  { label: "Live Grid", icon: "◫" },
-  { label: "Intake Feed", icon: "◉" },
-  { label: "Swarm Log", icon: "⧉" },
-  { label: "Agent Canvas", icon: "⬡" },
-  { label: "Reports", icon: "▤" },
-  { label: "Analytics", icon: "◔" },
-  { label: "Officers", icon: "⊕" },
-  { label: "Settings", icon: "⚙" },
+const navItems: { label: TabId; icon: string; href: string }[] = [
+  { label: "Live Grid",       icon: "◫", href: "/" },
+  { label: "Intake Feed",     icon: "◉", href: "/intake" },
+  { label: "Swarm Log",       icon: "⧉", href: "/swarm-log" },
+  { label: "Agent Canvas",    icon: "⬡", href: "/canvas" },
+  { label: "Knowledge Graph", icon: "◈", href: "/graph" },
+  { label: "Leaderboard",     icon: "▦", href: "/leaderboard" },
+  { label: "Reports",         icon: "▤", href: "/reports" },
+  { label: "Analytics",       icon: "◔", href: "/analytics" },
+  { label: "Officers",        icon: "⊕", href: "/officers" },
+  { label: "Settings",        icon: "⚙", href: "/settings" },
 ];
 
 export function Sidebar({ onNavigate }: SidebarProps) {
-  const { activeTab, setActiveTab } = useDashboard();
+  const { setActiveTab } = useDashboard();
+  const pathname = usePathname();
+  const router = useRouter();
 
-  const handleClick = (tab: TabId) => {
-    setActiveTab(tab);
+  const handleClick = (item: typeof navItems[number]) => {
+    // Keep legacy activeTab in sync for any component still reading it,
+    // then perform a real URL navigation so browser back/forward + deep-links work.
+    setActiveTab(item.label);
+    router.push(item.href);
     onNavigate?.(); // close mobile sidebar
   };
 
@@ -48,14 +57,17 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </div>
       </div>
 
-      {/* Nav */}
+      {/* Nav — real Next.js Links so URL changes + prefetching works */}
       <nav className="flex-1 px-2 py-3 space-y-0.5">
         {navItems.map((item) => {
-          const isActive = activeTab === item.label;
+          const isActive = pathname === item.href ||
+            (item.href !== "/" && pathname.startsWith(item.href));
           return (
-            <button
+            <Link
               key={item.label}
-              onClick={() => handleClick(item.label)}
+              href={item.href}
+              prefetch
+              onClick={() => handleClick(item)}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-all"
               style={{
                 background: isActive ? "var(--accent-blue-dim)" : "transparent",
@@ -67,7 +79,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               {isActive && (
                 <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent-blue)" }} />
               )}
-            </button>
+            </Link>
           );
         })}
       </nav>

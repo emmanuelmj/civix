@@ -57,9 +57,15 @@ export function SwarmLog({ entries }: SwarmLogProps) {
         })}
 
         {entries.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-sm font-mono"
+          <div className="flex flex-col items-center justify-center gap-2 py-12 px-4 text-center"
             style={{ color: "var(--fg-muted)" }}>
-            Swarm idle…
+            <span className="text-2xl" aria-hidden>⧉</span>
+            <p className="text-sm font-mono">Swarm idle…</p>
+            <p className="text-[11px] font-mono leading-relaxed" style={{ maxWidth: 260 }}>
+              Agent activity will stream here in real time once a grievance is ingested.
+              Actions from the Auditor, Priority, Dispatch, and Verification agents appear as
+              they are emitted by the LangGraph pipeline.
+            </p>
           </div>
         )}
       </div>

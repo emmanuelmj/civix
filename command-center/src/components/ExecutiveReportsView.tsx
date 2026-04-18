@@ -2,6 +2,12 @@
 
 import { useRef, useMemo, useState, useEffect } from "react";
 import type { PulseEvent, SwarmLogEntry, IntakeFeedItem } from "@/lib/types";
+import {
+  fetchAnalyticsTimeline,
+  fetchAnalyticsKpis,
+  type TimelinePoint,
+  type KpiAnalytics,
+} from "@/lib/socket";
 
 /* ─── Department config ─── */
 const DEPARTMENTS = [
@@ -12,17 +18,6 @@ const DEPARTMENTS = [
   { name: "Construction", color: "#a855f7" },
   { name: "Emergency", color: "#ef4444" },
 ] as const;
-
-/* ─── Deterministic pseudo-random from seed ─── */
-function seededHeights(seed: number): number[] {
-  const heights: number[] = [];
-  let s = seed * 2654435761;
-  for (let i = 0; i < 7; i++) {
-    s = ((s >>> 0) * 16807 + 13) & 0x7fffffff;
-    heights.push(0.2 + (s % 100) / 125);
-  }
-  return heights;
-}
 
 /* ─── Helpers ─── */
 function pct(n: number, total: number): string {
@@ -36,6 +31,12 @@ function formatDate(): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function normalizeHeights(points: TimelinePoint[]): number[] {
+  if (points.length === 0) return [];
+  const max = Math.max(1, ...points.map((p) => p.events));
+  return points.map((p) => p.events / max);
 }
 
 /* ─── Sub-components ─── */
@@ -62,8 +63,8 @@ function KpiCard({ label, value, color }: { label: string; value: number; color?
   );
 }
 
-function Sparkline({ seed, color }: { seed: number; color: string }) {
-  const bars = seededHeights(seed);
+function Sparkline({ heights, color }: { heights: number[]; color: string }) {
+  const bars = heights.length > 0 ? heights : [0, 0, 0, 0, 0, 0, 0];
   return (
     <div className="flex items-end gap-[3px]" style={{ height: 40 }}>
       {bars.map((h, i) => (
@@ -72,7 +73,7 @@ function Sparkline({ seed, color }: { seed: number; color: string }) {
           style={{
             width: 6,
             borderRadius: 2,
-            height: `${Math.round(h * 100)}%`,
+            height: `${Math.max(4, Math.round(h * 100))}%`,
             background: color,
             opacity: 0.75,
           }}
@@ -84,12 +85,14 @@ function Sparkline({ seed, color }: { seed: number; color: string }) {
 
 function DepartmentCard({
   department,
-  index,
+  timelineHeights,
+  avgTtrLabel,
   events,
   onViewReport,
 }: {
   department: (typeof DEPARTMENTS)[number];
-  index: number;
+  timelineHeights: number[];
+  avgTtrLabel: string;
   events: PulseEvent[];
   onViewReport?: () => void;
 }){
@@ -174,7 +177,7 @@ function DepartmentCard({
           className="text-sm font-semibold tabular-nums"
           style={{ color: "var(--fg-primary)" }}
         >
-          ~14m
+          {avgTtrLabel}
         </span>
       </div>
 
@@ -216,7 +219,7 @@ function DepartmentCard({
         >
           Last 7 Days
         </p>
-        <Sparkline seed={index + 1} color={department.color} />
+        <Sparkline heights={timelineHeights} color={department.color} />
       </div>
 
       {/* View Full Report link */}
@@ -233,15 +236,17 @@ function DepartmentCard({
 
 /* ─── Department Slide-Over ─── */
 
-function DepartmentSlideOver({ 
-  name, 
-  color, 
-  events, 
-  onClose 
-}: { 
-  name: string; 
-  color: string; 
-  events: PulseEvent[]; 
+function DepartmentSlideOver({
+  name,
+  color,
+  events,
+  timeline,
+  onClose
+}: {
+  name: string;
+  color: string;
+  events: PulseEvent[];
+  timeline: TimelinePoint[];
   onClose: () => void;
 }) {
   const deptEvents = events.filter(e => e.domain === name);
@@ -309,37 +314,31 @@ function DepartmentSlideOver({
             <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>7-Day Historical Trend</h3>
             <div className="rounded-lg p-4" style={{ background: "var(--bg-surface)" }}>
               <div className="flex items-end justify-between gap-2" style={{ height: 120 }}>
-                {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day, i) => {
-                  const h = [65, 40, 80, 55, 90, 30, 70][i];
-                  return (
-                    <div key={day} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="w-full rounded-t" style={{ height: h, background: color, opacity: 0.75 }} />
-                      <span className="text-[9px] font-mono" style={{ color: "var(--fg-muted)" }}>{day}</span>
-                    </div>
-                  );
-                })}
+                {(() => {
+                  const pts = timeline.length > 0 ? timeline : [];
+                  const max = Math.max(1, ...pts.map(p => p.events));
+                  if (pts.length === 0) {
+                    return (
+                      <span className="text-[11px] font-mono" style={{ color: "var(--fg-muted)" }}>
+                        No timeline data.
+                      </span>
+                    );
+                  }
+                  return pts.map((p) => {
+                    const h = Math.max(4, Math.round((p.events / max) * 110));
+                    const label = new Date(p.day).toLocaleDateString("en-US", { weekday: "short" });
+                    return (
+                      <div key={p.day} className="flex-1 flex flex-col items-center gap-1">
+                        <div className="w-full rounded-t" style={{ height: h, background: color, opacity: 0.75 }} />
+                        <span className="text-[9px] font-mono" style={{ color: "var(--fg-muted)" }}>{label}</span>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           </section>
-          
-          {/* Budget Burn Rate */}
-          <section>
-            <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>Budget Burn Rate</h3>
-            <div className="rounded-lg p-4 space-y-3" style={{ background: "var(--bg-surface)" }}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium" style={{ color: "var(--fg-primary)" }}>Quarterly Allocation</span>
-                <span className="text-sm font-bold tabular-nums" style={{ color: "var(--fg-primary)" }}>₹4.2 Cr</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
-                <div className="h-full rounded-full" style={{ width: "62%", background: color }} />
-              </div>
-              <div className="flex justify-between">
-                <span className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>62% utilized</span>
-                <span className="text-xs font-mono" style={{ color: "var(--fg-muted)" }}>₹1.6 Cr remaining</span>
-              </div>
-            </div>
-          </section>
-          
+
           {/* Top 3 Officers */}
           <section>
             <h3 className="text-[10px] font-semibold font-mono uppercase tracking-[0.2em] mb-3" style={{ color: "var(--fg-muted)" }}>Top Active Officers</h3>
@@ -377,8 +376,36 @@ export function ExecutiveReportsView({
   logs: SwarmLogEntry[];
   intake: IntakeFeedItem[];
 }) {
+  void logs;
+  void intake;
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedDept, setSelectedDept] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
+  const [kpiData, setKpiData] = useState<KpiAnalytics | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const [t, k] = await Promise.all([
+        fetchAnalyticsTimeline(7),
+        fetchAnalyticsKpis(),
+      ]);
+      if (!active) return;
+      setTimeline(t);
+      setKpiData(k);
+    };
+    load();
+    const int = setInterval(load, 30_000);
+    return () => {
+      active = false;
+      clearInterval(int);
+    };
+  }, []);
+
+  const timelineHeights = useMemo(() => normalizeHeights(timeline), [timeline]);
+  const avgTtrLabel = kpiData?.avg_resolution_minutes == null
+    ? "—"
+    : `~${kpiData.avg_resolution_minutes}m`;
 
   const kpis = useMemo(() => {
     const total = events.length;
@@ -516,11 +543,12 @@ export function ExecutiveReportsView({
           ref={scrollRef}
           className="flex overflow-x-auto snap-x snap-mandatory gap-6 no-scrollbar pb-8 px-1"
         >
-          {DEPARTMENTS.map((dept, i) => (
+          {DEPARTMENTS.map((dept) => (
             <DepartmentCard
               key={dept.name}
               department={dept}
-              index={i}
+              timelineHeights={timelineHeights}
+              avgTtrLabel={avgTtrLabel}
               events={events}
               onViewReport={() => setSelectedDept(dept.name)}
             />
@@ -533,6 +561,7 @@ export function ExecutiveReportsView({
           name={selectedDept}
           color={DEPARTMENTS.find(d => d.name === selectedDept)?.color ?? "var(--fg-primary)"}
           events={events}
+          timeline={timeline}
           onClose={() => setSelectedDept(null)}
         />
       )}

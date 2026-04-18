@@ -35,7 +35,7 @@ try:
         init_pool, close_pool, insert_pulse_event, update_event_status,
         insert_dispatch_log, get_officers, get_officer, update_officer_location,
         update_officer_status, find_nearest_officer, list_events, get_event,
-        list_officer_tasks,
+        list_officer_tasks, get_pool,
     )
 except ImportError:
     from swarm.graph import compile_graph, PulseState
@@ -44,7 +44,7 @@ except ImportError:
         init_pool, close_pool, insert_pulse_event, update_event_status,
         insert_dispatch_log, get_officers, get_officer, update_officer_location,
         update_officer_status, find_nearest_officer, list_events, get_event,
-        list_officer_tasks,
+        list_officer_tasks, get_pool,
     )
 
 # ---------------------------------------------------------------------------
@@ -540,6 +540,14 @@ async def pinecone_status() -> dict[str, Any]:
 
 # ── Watcher control ──────────────────────────────────────────────
 
+@app.get("/api/v1/watcher/status")
+async def watcher_status() -> dict[str, Any]:
+    """Background Pinecone watcher stats."""
+    if not watcher:
+        return {"status": "error", "running": False, "message": "Watcher not initialized"}
+    return {"status": "ok", **watcher.status}
+
+
 @app.post("/api/v1/watcher/rescan")
 async def watcher_rescan() -> dict[str, str]:
     """Force the watcher to rescan Pinecone immediately."""
@@ -824,6 +832,192 @@ async def api_list_officers(status: str | None = None) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Failed to list officers: {e}")
         return {"status": "error", "error": str(e), "officers": []}
+
+
+# ---------------------------------------------------------------------------
+# Analytics Endpoints (dashboard-backing)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/analytics/departments")
+async def analytics_departments() -> dict[str, Any]:
+    """Per-domain department analytics derived from pulse_events."""
+    sql = """
+        WITH agg AS (
+            SELECT
+                UPPER(domain) AS domain,
+                COUNT(*) AS total_events,
+                COUNT(*) FILTER (WHERE status = 'RESOLVED') AS resolved,
+                COUNT(*) FILTER (
+                    WHERE status = 'RESOLVED'
+                      AND time_to_resolution IS NOT NULL
+                      AND time_to_resolution <= INTERVAL '60 minutes'
+                ) AS resolved_within_sla,
+                AVG(EXTRACT(EPOCH FROM time_to_resolution)/60.0)
+                    FILTER (WHERE status = 'RESOLVED' AND time_to_resolution IS NOT NULL) AS avg_resolution_minutes,
+                AVG(impact_score) AS avg_impact_score,
+                COUNT(*) FILTER (WHERE cluster_found = TRUE) AS cluster_count
+            FROM pulse_events
+            GROUP BY UPPER(domain)
+        )
+        SELECT
+            domain,
+            total_events,
+            resolved,
+            CASE WHEN total_events = 0 THEN NULL
+                 ELSE ROUND(100.0 * resolved_within_sla / total_events)::int
+            END AS sla_compliance_pct,
+            CASE WHEN avg_resolution_minutes IS NULL THEN NULL
+                 ELSE ROUND(avg_resolution_minutes)::int
+            END AS avg_resolution_minutes,
+            ROUND(COALESCE(avg_impact_score, 0)::numeric, 1) AS avg_impact_score,
+            CASE WHEN total_events = 0 THEN 0
+                 ELSE ROUND(100.0 * cluster_count / total_events)::int
+            END AS cluster_resolution_pct,
+            LEAST(5.0, GREATEST(1.0,
+                COALESCE(ROUND(100.0 * resolved_within_sla / NULLIF(total_events,0))::numeric, 0) / 25.0 + 1.0
+            ))::numeric(3,1) AS satisfaction
+        FROM agg
+        ORDER BY sla_compliance_pct DESC NULLS LAST
+    """
+    try:
+        pool = get_pool()
+        rows = await pool.fetch(sql)
+        data = [dict(r) for r in rows]
+        for d in data:
+            for k, v in d.items():
+                if hasattr(v, "__float__") and type(v).__name__ == "Decimal":
+                    d[k] = float(v)
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        logger.exception("analytics_departments failed")
+        return {"status": "error", "error": str(e), "data": []}
+
+
+@app.get("/api/v1/analytics/kpis")
+async def analytics_kpis() -> dict[str, Any]:
+    """Overall KPI totals across all events."""
+    sql = """
+        SELECT
+            COUNT(*)::int AS total_events,
+            COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved,
+            COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')::int AS in_progress,
+            COUNT(*) FILTER (WHERE status = 'DISPATCHED')::int AS dispatched,
+            COUNT(*) FILTER (WHERE status = 'NEW')::int AS new,
+            CASE WHEN COUNT(*) FILTER (WHERE status = 'RESOLVED' AND time_to_resolution IS NOT NULL) = 0
+                 THEN NULL
+                 ELSE ROUND(AVG(EXTRACT(EPOCH FROM time_to_resolution)/60.0)
+                        FILTER (WHERE status = 'RESOLVED' AND time_to_resolution IS NOT NULL))::int
+            END AS avg_resolution_minutes,
+            ROUND(COALESCE(AVG(impact_score), 0)::numeric, 1) AS avg_impact_score,
+            COUNT(DISTINCT master_event_id) FILTER (WHERE cluster_found = TRUE)::int AS clusters_found,
+            COUNT(DISTINCT assigned_officer_id) FILTER (
+                WHERE status IN ('DISPATCHED','IN_PROGRESS')
+            )::int AS unique_officers_active
+        FROM pulse_events
+    """
+    try:
+        pool = get_pool()
+        row = await pool.fetchrow(sql)
+        data = dict(row) if row else {}
+        for k, v in data.items():
+            if type(v).__name__ == "Decimal":
+                data[k] = float(v)
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        logger.exception("analytics_kpis failed")
+        return {"status": "error", "error": str(e), "data": {}}
+
+
+@app.get("/api/v1/analytics/timeline")
+async def analytics_timeline(days: int = 7) -> dict[str, Any]:
+    """Daily event/resolution counts over the last N days, zero-filled."""
+    days = max(1, min(days, 90))
+    sql = """
+        WITH series AS (
+            SELECT generate_series(
+                CURRENT_DATE - ($1::int - 1),
+                CURRENT_DATE,
+                INTERVAL '1 day'
+            )::date AS day
+        ),
+        agg AS (
+            SELECT
+                date_trunc('day', created_at)::date AS day,
+                COUNT(*)::int AS events,
+                COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved
+            FROM pulse_events
+            WHERE created_at >= CURRENT_DATE - ($1::int - 1)
+            GROUP BY 1
+        )
+        SELECT
+            to_char(series.day, 'YYYY-MM-DD') AS day,
+            COALESCE(agg.events, 0) AS events,
+            COALESCE(agg.resolved, 0) AS resolved
+        FROM series
+        LEFT JOIN agg USING (day)
+        ORDER BY series.day ASC
+    """
+    try:
+        pool = get_pool()
+        rows = await pool.fetch(sql, days)
+        return {"status": "ok", "data": [dict(r) for r in rows]}
+    except Exception as e:
+        logger.exception("analytics_timeline failed")
+        return {"status": "error", "error": str(e), "data": []}
+
+
+@app.get("/api/v1/analytics/channels")
+async def analytics_channels() -> dict[str, Any]:
+    """Event counts grouped by source channel."""
+    sql = """
+        SELECT COALESCE(source, 'blob') AS source, COUNT(*)::int AS count
+        FROM pulse_events
+        GROUP BY COALESCE(source, 'blob')
+        ORDER BY count DESC
+    """
+    try:
+        pool = get_pool()
+        rows = await pool.fetch(sql)
+        return {"status": "ok", "data": [dict(r) for r in rows]}
+    except Exception as e:
+        logger.exception("analytics_channels failed")
+        return {"status": "error", "error": str(e), "data": []}
+
+
+@app.get("/api/v1/graph/infrastructure")
+async def graph_infrastructure() -> dict[str, Any]:
+    """Top geographic hotspots derived from event lat/lng clustering."""
+    sql = """
+        SELECT
+            ROUND(latitude::numeric, 2)::float AS lat,
+            ROUND(longitude::numeric, 2)::float AS lng,
+            UPPER(domain) AS domain,
+            COUNT(*)::int AS event_count
+        FROM pulse_events
+        GROUP BY 1, 2, 3
+        ORDER BY event_count DESC
+        LIMIT 6
+    """
+    try:
+        pool = get_pool()
+        rows = await pool.fetch(sql)
+        data = []
+        for r in rows:
+            lat = r["lat"]
+            lng = r["lng"]
+            dom = r["domain"]
+            data.append({
+                "id": f"infra-{dom.lower()}-{lat}-{lng}",
+                "label": f"Hotspot {dom} @ {lat},{lng}",
+                "domain": dom,
+                "lat": lat,
+                "lng": lng,
+                "event_count": r["event_count"],
+            })
+        return {"status": "ok", "data": data}
+    except Exception as e:
+        logger.exception("graph_infrastructure failed")
+        return {"status": "error", "error": str(e), "data": []}
 
 
 # ---------------------------------------------------------------------------

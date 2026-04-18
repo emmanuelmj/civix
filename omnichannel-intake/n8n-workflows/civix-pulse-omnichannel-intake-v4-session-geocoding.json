@@ -1,0 +1,1332 @@
+{
+  "updatedAt": "2026-04-17T20:05:38.765Z",
+  "createdAt": "2026-04-17T17:35:27.432Z",
+  "id": "hLSez72EcbqhrmhD",
+  "name": "Civix-Pulse: Omnichannel Intake v4 (Session + Geocoding)",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4c120d01-afbe-4c7e-9c8f-12d15095180a",
+      "name": "Webhook GET (Verification)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1440,
+        32
+      ],
+      "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "id": "04426f75-bc97-46b8-ab47-63e063cc81f2",
+      "name": "Respond to Webhook (Verification)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1200,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "civix-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0ab2e457-4228-4f17-9026-1a54694648e4",
+      "name": "WhatsApp Webhook POST",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1440,
+        240
+      ],
+      "webhookId": "b5c1cde1-4395-4867-8413-a8514fb58dc7"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"status\":\"ok\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "cb820783-6872-41b1-8170-6f29a3745cb0",
+      "name": "Respond 200 to Meta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1200,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nif (!body || !body.entry || !body.entry[0]) return [{ json: { skip: true } }];\nconst entry = body.entry[0];\nconst change = entry.changes[0];\nconst value = change.value;\nif (!value.messages || !value.messages[0]) return [{ json: { skip: true } }];\nconst message = value.messages[0];\nconst contact = value.contacts[0];\nreturn [{ json: {\n  phone: contact.wa_id,\n  name: contact.profile.name,\n  message_type: message.type,\n  text: message.text?.body || null,\n  audio_id: message.audio?.id || null,\n  image_id: message.image?.id || null,\n  image_caption: message.image?.caption || null,\n  latitude: message.location?.latitude || null,\n  longitude: message.location?.longitude || null,\n  timestamp: message.timestamp,\n  skip: false\n} }];"
+      },
+      "id": "d7496a67-d48e-4a18-8314-9f35b14bf5f6",
+      "name": "Extract Message Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fa5b1499-4eb8-4d73-88c6-cb7e38780687",
+      "name": "Skip Status Updates",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst phone = data.phone;\nconst sessions = $getWorkflowStaticData('global');\nif (!sessions.pendingEvents) sessions.pendingEvents = {};\nconst pending = sessions.pendingEvents[phone];\n\n// Incoming native location pin + pending complaint = COMPLETE\nif (data.message_type === 'location' && pending) {\n  const completed = { ...pending, latitude: data.latitude, longitude: data.longitude, location_source: 'native_pin', session_action: 'complete' };\n  delete sessions.pendingEvents[phone];\n  return [{ json: completed }];\n}\n\n// Location pin but no pending complaint\nif (data.message_type === 'location' && !pending) {\n  return [{ json: { ...data, session_action: 'orphan_location' } }];\n}\n\n// New complaint — store as pending\nsessions.pendingEvents[phone] = { ...data, session_start: new Date().toISOString() };\nreturn [{ json: { ...data, session_action: 'pending' } }];"
+      },
+      "id": "f2e867f1-3849-43d2-ba03-595da545d71d",
+      "name": "Session Manager",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_action }}",
+                    "rightValue": "complete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "complete"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_action }}",
+                    "rightValue": "pending",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "pending"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pending"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.session_action }}",
+                    "rightValue": "orphan_location",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "orphan"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Orphan"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b6f54de6-2b3d-48c3-9620-504cb6860c1a",
+      "name": "Session Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"Please describe your issue first before sharing a location.\"}}",
+        "options": {}
+      },
+      "id": "e7e684ae-b8a9-4ca4-a1ab-9bd488fad81c",
+      "name": "Orphan Location Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "spam-check",
+              "leftValue": "={{ $json.message_type === 'text' && $json.text && $json.text.trim().split(/\\s+/).length < 3 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6a35ddfb-db0c-48ce-ab21-a902f4d2e98d",
+      "name": "Spam Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.phone }}\",\"type\":\"text\",\"text\":{\"body\":\"Welcome to Civix-Pulse. Please describe your issue in detail, send a photo, or drop a voice note.\"}}",
+        "options": {}
+      },
+      "id": "dd5b3874-3806-4a94-bd22-edd0d51493ce",
+      "name": "Spam Auto-Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "text"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "audio"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message_type }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "image"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bdac5cf7-e13f-4b9a-b4ca-ee119de39aa4",
+      "name": "Message Type Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        240,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.audio_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2f81ef0e-ba72-4bd4-b9da-91743ca2aabe",
+      "name": "Get Audio URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "1bdaf610-57d5-40d0-8806-c89cddab4ecb",
+      "name": "Download Audio File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer gsk_REDACTED"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fdf9b6d5-5b9b-4318-92f5-3398f925e0bf",
+      "name": "Groq Whisper Transcription",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v19.0/{{ $json.image_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "27a0824d-d96b-4c82-88eb-c027b5f2a0b6",
+      "name": "Get Image URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "8c8cd3e9-bc20-4e8e-abf0-152c3edfb390",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaryData = $input.first().binary?.data;\nif (!binaryData) return [{ json: { base64Image: null, mimeType: null } }];\nreturn [{ json: { base64Image: binaryData.data, mimeType: binaryData.mimeType || 'image/jpeg' } }];"
+      },
+      "id": "f405b921-412f-43f9-883a-2b32b9a603f9",
+      "name": "Convert Image to Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-or-v1-REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://civix-pulse.app"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"model\":\"meta-llama/llama-3.2-11b-vision-instruct:free\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Describe the municipal or infrastructure issue visible in this image in one detailed sentence. Focus on: road condition, water, electricity, construction, or emergency hazards. If no issue is visible, respond with exactly: No issue detected.\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:{{ $json.mimeType }};base64,{{ $json.base64Image }}\"}}}]}],\"max_tokens\":300}",
+        "options": {}
+      },
+      "id": "a75a58d9-8f53-479f-9c16-74c76ed30e8b",
+      "name": "OpenRouter Vision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nif (data.text && typeof data.text === 'string' && !data.choices) return [{ json: { unified_text: data.text, source_type: 'text' } }];\nif (data.choices && data.choices[0]) return [{ json: { unified_text: data.choices[0].message.content, source_type: 'image' } }];\nreturn [{ json: { unified_text: 'No content extracted', source_type: 'unknown' } }];"
+      },
+      "id": "f32d6527-23f9-42a1-96ea-76495054e6cc",
+      "name": "Merge to Unified Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer gsk_REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "684e2257-3300-4421-bcb5-064e2c7af152",
+      "name": "Groq Classification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const classifyOutput = $input.first().json;\nconst extractedData = $('Extract Message Data').first().json;\nconst sessionData = $('Session Manager').first().json;\n\nlet ai;\ntry {\n  const rawText = classifyOutput.choices[0].message.content;\n  ai = JSON.parse(rawText.replace(/```json|```/g, '').trim());\n} catch(e) {\n  ai = { translated_description: 'Unable to parse', domain: 'MUNICIPAL', issue_type: 'Unknown', sentiment_score: 5, panic_flag: false, location_hint: '' };\n}\n\nconst uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); });\n\nlet rawInput = extractedData.text || (extractedData.audio_id ? 'Voice note transcribed' : null) || (extractedData.image_id ? 'Image received' : null);\n\nconst latitude = sessionData.latitude || extractedData.latitude || null;\nconst longitude = sessionData.longitude || extractedData.longitude || null;\n\nreturn [{ json: {\n  event_id: uuid(),\n  timestamp: new Date().toISOString(),\n  source: 'whatsapp',\n  citizen_id: extractedData.phone,\n  citizen_name: extractedData.name,\n  raw_input: rawInput,\n  multimodal_urls: {\n    image_url: extractedData.image_id ? `https://graph.facebook.com/v19.0/${extractedData.image_id}` : null,\n    audio_url: extractedData.audio_id ? `https://graph.facebook.com/v19.0/${extractedData.audio_id}` : null\n  },\n  ai_analysis: {\n    translated_description: ai.translated_description,\n    domain: ai.domain,\n    issue_type: ai.issue_type,\n    sentiment_score: ai.sentiment_score,\n    panic_flag: ai.panic_flag,\n    location_hint: ai.location_hint || ''\n  },\n  location: {\n    provided_text: extractedData.text || null,\n    latitude: latitude,\n    longitude: longitude,\n    location_hint: ai.location_hint || ''\n  },\n  embed_text: ai.translated_description,\n  session_action: sessionData.session_action\n} }];"
+      },
+      "id": "9c0dc061-f540-4052-a1d8-eb67ba248b7e",
+      "name": "Build Pulse Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "location-check",
+              "leftValue": "={{ $json.location.latitude === null && $json.location.longitude === null }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6dd3ddf8-140c-4362-8458-00c74cad9eea",
+      "name": "Location Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pulse = $input.first().json;\nconst query = pulse.location.location_hint || pulse.location.provided_text || '';\nif (!query || query.trim().length < 3) return [{ json: { ...pulse, geocode_query: '', skip_geocode: true } }];\nconst searchQuery = query.includes('Hyderabad') ? query : `${query}, Hyderabad, India`;\nreturn [{ json: { ...pulse, geocode_query: searchQuery, skip_geocode: false } }];"
+      },
+      "id": "746183f5-7cb5-43fa-8a06-a5d98fbe8882",
+      "name": "Prepare Geocode Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://nominatim.openstreetmap.org/search?q={{ encodeURIComponent($json.geocode_query) }}&format=json&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "CivixPulse/1.0 (hackathon@civix.app)"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "328585b1-f33e-4bfa-89fd-c5a568191481",
+      "name": "Geocode Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const geoResults = $input.first().json;\nconst pulse = $('Prepare Geocode Query').first().json;\nif (Array.isArray(geoResults) && geoResults.length > 0) {\n  pulse.location.latitude = parseFloat(geoResults[0].lat);\n  pulse.location.longitude = parseFloat(geoResults[0].lon);\n  pulse.location.geocoded = true;\n  pulse.location.geocode_display = geoResults[0].display_name;\n} else {\n  pulse.location.geocoded = false;\n}\nreturn [{ json: pulse }];"
+      },
+      "id": "9ec7c330-035f-4bc4-baa8-d60cad034ae2",
+      "name": "Merge Geocode Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $json.citizen_id }}\",\"type\":\"text\",\"text\":{\"body\":\"We received your complaint about {{ $json.ai_analysis.issue_type }}. Please drop a location pin so we can dispatch a crew to the exact spot.\"}}",
+        "options": {}
+      },
+      "id": "fe9c897e-e163-4c69-b9f7-2a6336f77831",
+      "name": "Ask for Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "civix-raw",
+          "mode": "list",
+          "cachedResultName": "civix-raw"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        3216,
+        144
+      ],
+      "id": "60601871-7eec-4758-a596-b877a488bf8b",
+      "name": "Pinecone Vector Store",
+      "credentials": {
+        "pineconeApi": {
+          "id": "TSNKNM0TTqTRMxqj",
+          "name": "Pinecone account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "embed-english-v3.0"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsCohere",
+      "typeVersion": 1,
+      "position": [
+        3024,
+        400
+      ],
+      "id": "5bfc3a07-24cb-4e29-a7d6-cdad6e31af5b",
+      "name": "Embeddings Cohere",
+      "credentials": {
+        "cohereApi": {
+          "id": "Xj1TtpyJZcQXNEp6",
+          "name": "Cohere account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.embed_text }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "event_id",
+                "value": "={{ $json.event_id }}"
+              },
+              {
+                "name": "domain",
+                "value": "={{ $json.ai_analysis.domain }}"
+              },
+              {
+                "name": "issue_type",
+                "value": "={{ $json.ai_analysis.issue_type }}"
+              },
+              {
+                "name": "citizen_id",
+                "value": "={{ $json.citizen_id }}"
+              },
+              {
+                "name": "citizen_name",
+                "value": "={{ $json.citizen_name || '' }}"
+              },
+              {
+                "name": "sentiment_score",
+                "value": "={{ $json.ai_analysis.sentiment_score }}"
+              },
+              {
+                "name": "panic_flag",
+                "value": "={{ String($json.ai_analysis.panic_flag) }}"
+              },
+              {
+                "name": "timestamp",
+                "value": "={{ $json.timestamp }}"
+              },
+              {
+                "name": "translated_description",
+                "value": "={{ $json.ai_analysis.translated_description }}"
+              },
+              {
+                "name": "raw_input",
+                "value": "={{ $json.raw_input || '' }}"
+              },
+              {
+                "name": "latitude",
+                "value": "={{ $json.location.latitude || 0 }}"
+              },
+              {
+                "name": "longitude",
+                "value": "={{ $json.location.longitude || 0 }}"
+              },
+              {
+                "name": "location_hint",
+                "value": "={{ $json.location.location_hint || '' }}"
+              },
+              {
+                "name": "provided_text",
+                "value": "={{ $json.location.provided_text || '' }}"
+              },
+              {
+                "name": "image_url",
+                "value": "={{ $json.multimodal_urls.image_url || '' }}"
+              },
+              {
+                "name": "audio_url",
+                "value": "={{ $json.multimodal_urls.audio_url || '' }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [
+        3232,
+        400
+      ],
+      "id": "80711674-4339-44f8-ba99-041b086f98aa",
+      "name": "Default Data Loader"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/980866428452085/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REDACTED"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"messaging_product\":\"whatsapp\",\"to\":\"{{ $('Build Pulse Event').first().json.citizen_id }}\",\"type\":\"text\",\"text\":{\"body\":\"Complaint logged!\\n\\nID: {{ $('Build Pulse Event').first().json.event_id.slice(0,8).toUpperCase() }}\\nIssue: {{ $('Build Pulse Event').first().json.ai_analysis.issue_type }}\\nCategory: {{ $('Build Pulse Event').first().json.ai_analysis.domain }}\\nPriority: {{ $('Build Pulse Event').first().json.ai_analysis.sentiment_score >= 8 ? 'CRITICAL' : $('Build Pulse Event').first().json.ai_analysis.sentiment_score >= 5 ? 'HIGH' : 'STANDARD' }}\\nLocation: {{ $('Build Pulse Event').first().json.location.location_hint || 'Being determined' }}\\n\\nWe are on it. You will be notified once resolved.\"}}",
+        "options": {}
+      },
+      "id": "14e0fc09-85e3-4d48-bf03-592df7fdb140",
+      "name": "Confirmation Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook GET (Verification)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Verification)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Webhook POST": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 to Meta",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Skip Status Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Status Updates": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Session Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Manager": {
+      "main": [
+        [
+          {
+            "node": "Session Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Router": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Spam Filter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Orphan Location Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Spam Filter": {
+      "main": [
+        [
+          {
+            "node": "Spam Auto-Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message Type Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Type Router": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Audio URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Image URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio URL": {
+      "main": [
+        [
+          {
+            "node": "Download Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio File": {
+      "main": [
+        [
+          {
+            "node": "Groq Whisper Transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Whisper Transcription": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Image URL": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Convert Image to Base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Image to Base64": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Vision": {
+      "main": [
+        [
+          {
+            "node": "Merge to Unified Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge to Unified Text": {
+      "main": [
+        [
+          {
+            "node": "Groq Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Classification": {
+      "main": [
+        [
+          {
+            "node": "Build Pulse Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Pulse Event": {
+      "main": [
+        [
+          {
+            "node": "Location Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Location Check": {
+      "main": [
+        [
+          {
+            "node": "Prepare Geocode Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Geocode Query": {
+      "main": [
+        [
+          {
+            "node": "Geocode Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geocode Location": {
+      "main": [
+        []
+      ]
+    },
+    "Merge Geocode Result": {
+      "main": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ask for Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Cohere": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Pinecone Vector Store",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Confirmation Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "Merge Geocode Result": [
+      {
+        "json": {
+          "_id": "f8a9e21b-4c3d-4e9f-8b2a-1a2b3c4d5e6f",
+          "audio_url": "",
+          "blobType": "text/plain",
+          "citizen_id": "919876543210",
+          "citizen_name": "Ravi Kumar",
+          "domain": "MUNICIPAL",
+          "event_id": "a1b2c3d4-e5f6-7890-1234-56789abcdef0",
+          "image_url": "https://graph.facebook.com/v19.0/102938475610293",
+          "issue_type": "Pothole",
+          "latitude": 17.431145,
+          "loc.lines.from": 1,
+          "loc.lines.to": 1,
+          "longitude": 78.401123,
+          "panic_flag": "false",
+          "provided_text": "Huge pothole near Jubilee Hills checkpost",
+          "raw_input": "Huge pothole near Jubilee Hills checkpost",
+          "sentiment_score": 7,
+          "source": "blob",
+          "text": "Large, dangerous pothole reported near Jubilee Hills Checkpost causing traffic slowdowns and potential vehicle damage.",
+          "timestamp": "2026-04-18T08:15:30.165Z",
+          "translated_description": "Large, dangerous pothole reported near Jubilee Hills Checkpost causing traffic slowdowns and potential vehicle damage."
+        }
+      }
+    ]
+  },
+  "versionId": "064f889f-3fee-4bdf-94ec-16bc3f193d0e",
+  "activeVersionId": null,
+  "versionCounter": 8,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-17T17:35:27.434Z",
+      "createdAt": "2026-04-17T17:35:27.434Z",
+      "role": "workflow:owner",
+      "workflowId": "hLSez72EcbqhrmhD",
+      "projectId": "3JsxL7LAcIm0kUQh",
+      "project": {
+        "updatedAt": "2026-04-17T12:01:35.419Z",
+        "createdAt": "2026-04-17T11:58:51.598Z",
+        "id": "3JsxL7LAcIm0kUQh",
+        "name": "Aditya T <teentechindia@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "46d3a616-af80-4367-86ea-aeebc4fccd4f"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}
