@@ -20,9 +20,11 @@ import PhoneFrame from './components/PhoneFrame';
 import { healthCheck, updateOfficerLocation, verifyResolution, fetchOfficerTasks, fetchOfficerProfile } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const DEFAULT_OFFICER_ID   = 'OP-101';
-const OFFICER_LAT = 17.4482;
-const OFFICER_LNG = 78.3914;
+// Default officer identity (sourced from officers table — OP-104 Sneha Patel,
+// dual-skilled MUNICIPAL + ELECTRICITY, stationed in central Hyderabad).
+const DEFAULT_OFFICER_ID   = 'OP-104';
+const OFFICER_LAT = 17.4156;
+const OFFICER_LNG = 78.4347;
 
 /**
  * Maps a raw backend event (from PostgreSQL) into the dispatch card format
@@ -68,23 +70,63 @@ function mapEventToDispatch(event) {
   };
 }
 
-// Fallback mock dispatches in case backend is unreachable
+// Fallback mock dispatches in case backend is unreachable.
+// Diverse Hyderabad incidents covering all 6 Civix-Pulse domains so the
+// demo experience stays rich even without a live backend connection.
 const FALLBACK_DISPATCHES = [
   {
-    id: 'rd-001', ticketId: 'TKT-7741',
-    title: 'Massive Pothole — NH65 Tolichowki',
-    description: 'Deep pothole near Tolichowki flyover. 3 vehicles damaged.',
-    direction: 'Proceed 1.2km North on NH-65', distance: '1.2 km',
-    priority: 'HIGH', lat: 17.4482, lng: 78.3914, time: '08:30',
-    reportedBy: 'Auto-detected via 14 citizen reports', reportCount: 14,
+    id: 'rd-001', ticketId: 'TKT-9012',
+    title: 'Gas Leak — Banjara Hills Road No. 12',
+    description: 'Strong LPG smell reported near residential block. Evacuation underway, fire brigade en route.',
+    direction: 'Proceed 0.6km East to incident location', distance: '0.6 km',
+    priority: 'CRITICAL', lat: 17.4126, lng: 78.4348, time: '08:42',
+    reportedBy: 'Auto-clustered from 31 citizen reports', reportCount: 31,
+    domain: 'EMERGENCY', impact_score: 95, status: 'DISPATCHED',
   },
   {
-    id: 'rd-002', ticketId: 'TKT-7748',
-    title: 'Flooded Intersection — Jubilee Hills',
-    description: 'Storm water overflow flooding Road No. 36.',
-    direction: 'Proceed 0.8km South-West', distance: '0.8 km',
-    priority: 'CRITICAL', lat: 17.4150, lng: 78.4480, time: '09:15',
-    reportedBy: '22 citizen reports', reportCount: 22,
+    id: 'rd-002', ticketId: 'TKT-9018',
+    title: 'Water Main Burst — Madhapur HITEC City',
+    description: 'Major water main rupture flooding the IT corridor. Traffic disruption on Cyber Towers road.',
+    direction: 'Proceed 1.4km North-West towards HITEC City', distance: '1.4 km',
+    priority: 'CRITICAL', lat: 17.4485, lng: 78.3908, time: '09:05',
+    reportedBy: 'Auto-clustered from 24 citizen reports', reportCount: 24,
+    domain: 'WATER', impact_score: 88, status: 'DISPATCHED',
+  },
+  {
+    id: 'rd-003', ticketId: 'TKT-9023',
+    title: 'Transformer Sparking — Kukatpally',
+    description: 'Distribution transformer emitting sparks during light rain. Power restored to 3 streets pending.',
+    direction: 'Proceed 2.1km North to KPHB Phase 5', distance: '2.1 km',
+    priority: 'HIGH', lat: 17.4849, lng: 78.4138, time: '09:18',
+    reportedBy: 'Auto-clustered from 12 citizen reports', reportCount: 12,
+    domain: 'ELECTRICITY', impact_score: 76, status: 'DISPATCHED',
+  },
+  {
+    id: 'rd-004', ticketId: 'TKT-9031',
+    title: 'Signal Outage — Punjagutta Junction',
+    description: 'All four-way traffic signals dark since 08:50. Manual traffic control required immediately.',
+    direction: 'Proceed 1.0km South to Punjagutta circle', distance: '1.0 km',
+    priority: 'HIGH', lat: 17.4274, lng: 78.4506, time: '09:24',
+    reportedBy: 'Auto-clustered from 18 citizen reports', reportCount: 18,
+    domain: 'TRAFFIC', impact_score: 72, status: 'DISPATCHED',
+  },
+  {
+    id: 'rd-005', ticketId: 'TKT-9040',
+    title: 'Garbage Overflow — Begumpet Market',
+    description: 'Open dump overflowing for 3 days. Stray animal activity, sanitation hazard.',
+    direction: 'Proceed 1.8km East towards Begumpet', distance: '1.8 km',
+    priority: 'MODERATE', lat: 17.4435, lng: 78.4626, time: '09:31',
+    reportedBy: 'Auto-clustered from 9 citizen reports', reportCount: 9,
+    domain: 'MUNICIPAL', impact_score: 54, status: 'DISPATCHED',
+  },
+  {
+    id: 'rd-006', ticketId: 'TKT-9047',
+    title: 'Construction Debris — Gachibowli ORR Service Road',
+    description: 'Unauthorised dumping of construction debris blocking footpath and one lane.',
+    direction: 'Proceed 3.2km West along ORR service road', distance: '3.2 km',
+    priority: 'LOW', lat: 17.4400, lng: 78.3489, time: '09:38',
+    reportedBy: 'Single citizen report', reportCount: 1,
+    domain: 'CONSTRUCTION', impact_score: 35, status: 'DISPATCHED',
   },
 ];
 
@@ -224,7 +266,11 @@ export default function App() {
   };
 
   const openDirections = (task) => {
-    Linking.openURL(`https://maps.google.com/?q=${task.lat},${task.lng}`);
+    // Encode the incident title as the pin label so Google Maps shows
+    // "<Title>" instead of bare lat/lng coordinates on the dropped pin.
+    const label = (task.title || task.ticketId || 'Incident').replace(/[()]/g, '');
+    const url = `https://maps.google.com/?q=${task.lat},${task.lng}+(${encodeURIComponent(label)})`;
+    Linking.openURL(url);
   };
 
   const submitSupport = () => {
