@@ -20,11 +20,17 @@ import PhoneFrame from './components/PhoneFrame';
 import { healthCheck, updateOfficerLocation, verifyResolution, fetchOfficerTasks, fetchOfficerProfile } from './services/api';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-// Default officer identity (sourced from officers table — OP-104 Sneha Patel,
-// dual-skilled MUNICIPAL + ELECTRICITY, stationed in central Hyderabad).
-const DEFAULT_OFFICER_ID   = 'OP-104';
-const OFFICER_LAT = 17.4156;
-const OFFICER_LNG = 78.4347;
+// Default officer identity (sourced from officers table — OP-102 Priya Sharma,
+// dedicated TRAFFIC / road-infrastructure officer, stationed in central Hyd).
+const DEFAULT_OFFICER_ID   = 'OP-102';
+const OFFICER_LAT = 17.3616;
+const OFFICER_LNG = 78.4747;
+
+// This worker is scoped to a single department. Dashboard only surfaces
+// dispatches whose domain matches this code (analogous to dept === 'ROADS').
+const WORKER_DEPT      = 'TRAFFIC';
+const WORKER_DEPT_LABEL = 'Roads';
+const WORKER_ROLE      = 'Road Infrastructure';
 
 /**
  * Maps a raw backend event (from PostgreSQL) into the dispatch card format
@@ -151,14 +157,13 @@ export default function App() {
   // Officer identity (loaded from backend or default)
   const [officerId, setOfficerId] = useState(DEFAULT_OFFICER_ID);
   const [officerName, setOfficerName] = useState('Field Officer');
-  const [officerRole, setOfficerRole] = useState('Municipal Services');
+  const [officerRole, setOfficerRole] = useState(WORKER_ROLE);
 
   // Real dispatches from backend (replaces hardcoded DISPATCHES)
   const [dispatches, setDispatches] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
 
-  // Active category filter on dashboard ('ALL' = no filter)
-  const [activeCategory, setActiveCategory] = useState('ALL');
+  // (Category filter UI removed — this worker is dept-scoped to WORKER_DEPT.)
 
   // Tracks whether the officer has gone on duty this session (prevents re-showing overlay on return)
   const [hasGoneOnDuty, setHasGoneOnDuty] = useState(false);
@@ -337,20 +342,12 @@ export default function App() {
     setAppState(2);
   };
 
-  // ── Category chips + filter derivation ─────────────────────────────────────
-  const categoryChips = [
-    { id: 'ALL',         label: '🗂 All' },
-    { id: 'WATER',       label: '💧 Water' },
-    { id: 'TRAFFIC',     label: '🚦 Traffic' },
-    { id: 'ELECTRICITY', label: '⚡ Electric' },
-    { id: 'MUNICIPAL',   label: '🏛 Municipal' },
-    { id: 'EMERGENCY',   label: '🚨 Emergency' },
-    { id: 'CONSTRUCTION',label: '🏗 Construction' },
-    { id: 'SANITATION',  label: '🧹 Sanitation' },
-  ];
-  const filteredDispatches = activeCategory === 'ALL'
-    ? dispatches
-    : dispatches.filter(d => (d.category || d.domain || '').toUpperCase() === activeCategory);
+  // ── Dispatch list derivation ───────────────────────────────────────────────
+  // Single source of truth — all dispatches whose domain matches WORKER_DEPT.
+  // No secondary category chips: this worker is exclusively WORKER_ROLE.
+  const filteredDispatches = dispatches.filter(
+    d => (d.category || d.domain || '').toUpperCase() === WORKER_DEPT
+  );
 
   // ── Screen renderer ────────────────────────────────────────────────────────
   const renderScreen = () => {
@@ -396,37 +393,15 @@ export default function App() {
               </View>
             </View>
 
-            {/* Section label */}
+            {/* Section label — header flows directly into task list, no chips */}
             <View style={s.sectionRow}>
-              <Text style={s.sectionLabel}>AWAITING DISPATCHES ({filteredDispatches.length}/{dispatches.length})</Text>
+              <Text style={s.sectionLabel}>AWAITING DISPATCHES ({WORKER_DEPT_LABEL.toUpperCase()}) ({filteredDispatches.length})</Text>
               <View style={s.roleBadge}>
                 <Text style={s.roleBadgeText}>🏛 {officerRole.toUpperCase()}</Text>
               </View>
             </View>
 
-            {/* Category filter chips — horizontal scrollable */}
-            <View style={s.filterRow}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingVertical: 8 }}>
-                {categoryChips.map(cat => {
-                  const active = activeCategory === cat.id;
-                  const count = cat.id === 'ALL' ? dispatches.length : dispatches.filter(d => (d.category || d.domain || '').toUpperCase() === cat.id).length;
-                  return (
-                    <TouchableOpacity
-                      key={cat.id}
-                      onPress={() => setActiveCategory(cat.id)}
-                      style={[s.filterChip, active && s.filterChipActive]}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[s.filterChipText, active && s.filterChipTextActive]}>
-                        {cat.label} {count > 0 && <Text style={{ opacity: 0.65 }}>({count})</Text>}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-
-            {/* Dispatch list — real data from PostgreSQL */}
+            {/* Dispatch list — single dept-scoped feed, no secondary filtering */}
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16 }}>
               {loadingTasks ? (
                 <View style={{ alignItems: 'center', paddingTop: 40 }}>
@@ -435,20 +410,11 @@ export default function App() {
                 </View>
               ) : filteredDispatches.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingTop: 40 }}>
-                  <Text style={{ fontSize: 40, marginBottom: 12 }}>{dispatches.length === 0 ? '✅' : '🔍'}</Text>
-                  <Text style={{ color: T.text, fontSize: 16, fontWeight: '700' }}>
-                    {dispatches.length === 0 ? 'All Clear' : 'No matches'}
-                  </Text>
+                  <Text style={{ fontSize: 40, marginBottom: 12 }}>✅</Text>
+                  <Text style={{ color: T.text, fontSize: 16, fontWeight: '700' }}>All Clear</Text>
                   <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>
-                    {dispatches.length === 0
-                      ? 'No pending dispatches assigned.'
-                      : `No ${activeCategory === 'ALL' ? '' : activeCategory.toLowerCase() + ' '}dispatches in this category.`}
+                    No pending {WORKER_DEPT_LABEL.toLowerCase()} dispatches assigned.
                   </Text>
-                  {dispatches.length > 0 && activeCategory !== 'ALL' && (
-                    <TouchableOpacity onPress={() => setActiveCategory('ALL')} style={{ marginTop: 14 }}>
-                      <Text style={{ color: T.accent, fontSize: 12, fontWeight: '700' }}>SHOW ALL</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
               ) : (
                 filteredDispatches.map(d => (
