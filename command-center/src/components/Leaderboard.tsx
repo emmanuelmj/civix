@@ -83,7 +83,7 @@ export function Leaderboard({ events = [] }: LeaderboardProps) {
   }, [events.length]);
 
   const loading = departments === null;
-  const rows = departments ?? [];
+  const rows = (departments ?? []).slice().sort((a, b) => (b.slaCompliance ?? 0) - (a.slaCompliance ?? 0));
 
   return (
     <div className="h-full flex flex-col overflow-hidden">

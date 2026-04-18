@@ -426,10 +426,10 @@ export function ExecutiveReportsView({
     });
   };
 
-  if (events.length === 0) {
+  if (events.length === 0 && kpiData === null) {
     return (
       <div
-        className="flex flex-col items-center justify-center py-32"
+        className="h-full flex flex-col items-center justify-center py-32"
         style={{ color: "var(--fg-muted)" }}
       >
         <svg
@@ -441,7 +441,7 @@ export function ExecutiveReportsView({
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="mb-4 opacity-40"
+          className="mb-4 opacity-40 animate-pulse"
         >
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
           <polyline points="14 2 14 8 20 8" />
@@ -450,17 +450,17 @@ export function ExecutiveReportsView({
           <polyline points="10 9 9 9 8 9" />
         </svg>
         <p className="text-sm font-medium" style={{ color: "var(--fg-secondary)" }}>
-          No events to report
+          Loading reports…
         </p>
         <p className="text-xs mt-1" style={{ color: "var(--fg-muted)" }}>
-          Executive reports will appear once grievances are ingested.
+          Fetching grievance data from the intelligence layer.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="pt-8 pb-6 px-6 space-y-8">
+    <div className="h-full overflow-y-auto pt-8 pb-6 px-6 space-y-8">
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">

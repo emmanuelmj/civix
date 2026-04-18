@@ -159,25 +159,29 @@ export default function App() {
     return () => { if (locationTimer.current) clearInterval(locationTimer.current); };
   }, [hasGoneOnDuty, backendStatus]);
 
-  // ── Load real tasks from backend when entering dashboard ───────────────────
-  useEffect(() => {
-    if (appState !== 2 || !officerId) return;
-    if (backendStatus !== 'ok') {
-      setDispatches([]);
-      return;
-    }
+  // ── Load real tasks from backend ────────────────────────────────────────────
+  const loadTasks = (oid = officerId, lat = officerLat, lng = officerLng) => {
+    if (!oid) return;
+    console.log('[Tasks] Fetching tasks for', oid);
     setLoadingTasks(true);
-    fetchOfficerTasks(officerId)
+    fetchOfficerTasks(oid)
       .then(res => {
+        console.log('[Tasks] Response:', res?.status, 'count:', res?.tasks?.length);
         if (res?.status === 'ok' && res.tasks?.length > 0) {
           const pending = res.tasks.filter(t => t.status !== 'RESOLVED');
-          setDispatches(pending.map(t => mapEventToDispatch(t, officerLat, officerLng)));
+          setDispatches(pending.map(t => mapEventToDispatch(t, lat, lng)));
         } else {
           setDispatches([]);
         }
       })
-      .catch(() => setDispatches([]))
+      .catch(err => { console.warn('[Tasks] Error:', err.message); setDispatches([]); })
       .finally(() => setLoadingTasks(false));
+  };
+
+  useEffect(() => {
+    if (appState !== 2 || !officerId) return;
+    if (backendStatus !== 'ok') { setDispatches([]); return; }
+    loadTasks();
   }, [appState, backendStatus, officerId]);
 
   // ── Show duty popup when arriving at Dashboard (only if not already on duty) ─
@@ -251,10 +255,14 @@ export default function App() {
     setOfficerDept(primaryDept);
     setOfficerDeptLabel(DOMAIN_LABELS[primaryDept] || primaryDept);
     setOfficerRole(skills.map(s => DOMAIN_LABELS[s] || s).join(' · '));
-    if (officerProfile.latitude) setOfficerLat(officerProfile.latitude);
-    if (officerProfile.longitude) setOfficerLng(officerProfile.longitude);
+    const lat = officerProfile.latitude || DEFAULT_LAT;
+    const lng = officerProfile.longitude || DEFAULT_LNG;
+    setOfficerLat(lat);
+    setOfficerLng(lng);
     setBackendStatus('ok');
     setAppState(2);
+    // Immediately fetch tasks — don't rely solely on useEffect
+    setTimeout(() => loadTasks(officerProfile.officer_id, lat, lng), 100);
   };
 
   const acceptDispatch = (d) => {
@@ -387,9 +395,9 @@ export default function App() {
             {/* Section label */}
             <View style={s.sectionRow}>
               <Text style={s.sectionLabel}>DISPATCHES ({officerDeptLabel ? officerDeptLabel.toUpperCase() : 'ALL'}) ({filteredDispatches.length})</Text>
-              <View style={s.roleBadge}>
-                <Text style={s.roleBadgeText}>🏛 {officerRole.toUpperCase()}</Text>
-              </View>
+              <TouchableOpacity onPress={() => loadTasks()} hitSlop={HIT}>
+                <Text style={{ color: T.accent, fontSize: 12, fontWeight: '700', letterSpacing: 1 }}>↻ REFRESH</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Dispatch list */}
@@ -406,6 +414,9 @@ export default function App() {
                   <Text style={{ color: T.textSecondary, fontSize: 13, marginTop: 4 }}>
                     No pending dispatches assigned to you.
                   </Text>
+                  <TouchableOpacity onPress={() => loadTasks()} style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: T.accent, borderRadius: 8 }}>
+                    <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Refresh Tasks</Text>
+                  </TouchableOpacity>
                 </View>
               ) : (
                 filteredDispatches.map(d => (
