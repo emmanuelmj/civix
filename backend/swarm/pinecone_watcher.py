@@ -366,15 +366,27 @@ class PineconeWatcher:
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Start the watcher. Seeds processed_ids with existing vectors."""
+        """Start the watcher. Seeds processed_ids with already-processed vectors only."""
         if not self.pc.is_connected:
             logger.warning("[Watcher] Pinecone not connected. Watcher disabled.")
             return
 
-        # Seed with existing IDs so we don't reprocess old events on first run
-        self.processed_ids = self.pc.list_all_ids(namespace=self.namespace)
+        # Seed with ALL existing IDs first
+        all_ids = self.pc.list_all_ids(namespace=self.namespace)
+
+        # Query for vectors still marked NEW — exclude them from seed
+        new_by_status = self.pc.query_by_metadata(
+            filter_dict={"status": {"$eq": "NEW"}},
+            top_k=100,
+            namespace=self.namespace,
+        )
+        new_ids = {m["id"] for m in new_by_status} if new_by_status else set()
+
+        # Only seed IDs that are NOT new — so new ones get picked up on first poll
+        self.processed_ids = all_ids - new_ids
         logger.info(
-            f"[Watcher] Seeded with {len(self.processed_ids)} existing vectors "
+            f"[Watcher] Seeded with {len(self.processed_ids)} processed vectors, "
+            f"{len(new_ids)} pending NEW vectors "
             f"(namespace='{self.namespace}'). "
             f"Polling every {self.poll_interval}s — filtering by status='NEW'…"
         )
