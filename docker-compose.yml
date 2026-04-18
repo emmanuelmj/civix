@@ -1,0 +1,58 @@
+# Civix-Pulse — Docker Compose
+# Starts all services: PostgreSQL, Backend, Command Center, Field Worker App
+
+services:
+  # ── PostgreSQL Database ────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: civix
+      POSTGRES_PASSWORD: civix_dev
+      POSTGRES_DB: civix_pulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U civix -d civix_pulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── FastAPI Backend + LangGraph Pipeline ───────────────────────
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_URL: "postgresql://civix:civix_dev@postgres:5432/civix_pulse"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Next.js Command Center Dashboard ───────────────────────────
+  command-center:
+    build: ./command-center
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ── Expo Field Worker App (Web) ────────────────────────────────
+  field-worker:
+    build: ./field-worker-app
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:

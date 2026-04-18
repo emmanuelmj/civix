@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/AI4Impact-Hackathon%202025-000000?style=flat-square" alt="AI4Impact" />
+  <img src="https://img.shields.io/badge/AI4Impact-Hackathon%202026-000000?style=flat-square" alt="AI4Impact" />
   <img src="https://img.shields.io/badge/PS%206-Agentic%20Governance-1c1c1e?style=flat-square" alt="PS 6" />
   <img src="https://img.shields.io/badge/python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=next.js" alt="Next.js" />
@@ -62,61 +62,66 @@ flowchart TB
         LETTER[Handwritten Letter]
     end
 
-    subgraph INTAKE["Omnichannel Intake · Dev 2"]
+    subgraph INTAKE["Omnichannel Intake · n8n"]
         N8N["n8n Workflows"]
-        OCR["OCR Engine"]
-        STT["Bhashini STT"]
-        LLM_CLASS["LLM Classifier"]
-        PINECONE[(Pinecone Vector DB)]
+        CLASSIFY["Domain Classifier"]
+        EMBED_IN["Embedding Generator"]
+        PINECONE[(Pinecone Vector DB\n76 vectors · 1024 dim)]
     end
 
-    subgraph BACKEND["Backend Swarm · Dev 1"]
-        API["FastAPI Server"]
-        CLUSTER["Cluster Analysis"]
-        PRIORITY["Priority Agent · LangChain"]
-        SPATIAL["Spatial Matchmaker"]
-        POSTGIS[(PostgreSQL + PostGIS)]
-        WS["WebSocket Server"]
-        BROWSER["Browser-Use · Playwright"]
+    subgraph BACKEND["Backend Swarm · FastAPI + LangGraph"]
+        API["FastAPI Server\nport 8000"]
+        subgraph LANGGRAPH["LangGraph 4-Agent Pipeline"]
+            AUDITOR["🔍 Systemic Auditor\nEmbedding → Pinecone\nCosine Similarity ≥ 0.85"]
+            PRIORITY["⚡ Priority Agent\nGPT-4.1 Impact Matrix\nScore 1–100"]
+            AMPLIFIER["📢 Cluster Amplifier\n+15 pts if cluster found"]
+            DISPATCH["🚀 Dispatch Agent\nHaversine + Skill Match\nNearest Qualified Officer"]
+        end
+        WATCHER["Pinecone Watcher\nPolls every 5s\nstatus: NEW → PROCESSED"]
+        POSTGRES[(PostgreSQL 16\nEvents · Officers\nDispatch Logs · TTR)]
+        WS["WebSocket Server\nReal-time Push"]
     end
 
-    subgraph DASHBOARD["Command Center · Dev 3"]
-        MAP["Live Heatmap"]
-        LOG["Agent Activity Log"]
-        METRICS["Executive Metrics"]
+    subgraph DASHBOARD["Command Center · Next.js 15"]
+        MAP["Live Map + Heatmap\nMapLibre GL"]
+        FEED["Intake Feed\nUrgency Bars"]
+        ANALYTICS["Analytics + KPIs\nResolution Rates"]
+        SWARMLOG["Agent Trace Log"]
     end
 
-    subgraph MOBILE["Field Worker App · Dev 4"]
-        GPS["GPS Tracker"]
-        CAMERA["Camera Verification"]
-        TASKS["Task Queue"]
+    subgraph MOBILE["Field Worker App · Expo"]
+        TASKS["Task Queue\nReal PostgreSQL Data"]
+        GPS["GPS Location Pings"]
+        CAMERA["Verification Camera"]
     end
 
     subgraph AI["LLM Services"]
-        CLAUDE["Claude Sonnet · Reasoning"]
-        GEMINI["Gemini Flash · Vision"]
+        GPT["GPT-4.1 via GitHub Models\nPriority Scoring\nVerification Analysis"]
+        EMB["text-embedding-3-small\n1024-dim Embeddings"]
     end
 
     WA & WEB & VOICE & LETTER --> N8N
-    N8N --> OCR & STT
-    OCR & STT --> LLM_CLASS
-    LLM_CLASS --> PINECONE
+    N8N --> CLASSIFY --> EMBED_IN --> PINECONE
 
     N8N -- "POST /trigger-analysis" --> API
-    API --> CLUSTER
-    CLUSTER <--> PINECONE
-    CLUSTER --> PRIORITY
-    PRIORITY <--> CLAUDE
-    PRIORITY --> SPATIAL
-    SPATIAL <--> POSTGIS
-    SPATIAL --> WS
-    PRIORITY --> BROWSER
+    PINECONE -- "status: NEW" --> WATCHER --> API
+    API --> AUDITOR
+    AUDITOR -- "generate embedding" --> EMB
+    AUDITOR -- "query similar" --> PINECONE
+    AUDITOR --> PRIORITY
+    PRIORITY --> GPT
+    PRIORITY --> AMPLIFIER
+    AMPLIFIER --> DISPATCH
+    DISPATCH --> POSTGRES
+    DISPATCH --> WS
 
-    WS -- "NEW_DISPATCH" --> MAP & LOG & TASKS
+    WS -- "NEW_DISPATCH" --> MAP & FEED & SWARMLOG
+    WS -- "RESOLUTION_VERIFIED" --> ANALYTICS
+    TASKS -- "GET /officer/{id}/tasks" --> API
     CAMERA -- "POST /verify-resolution" --> API
-    API <--> GEMINI
+    API -- "LLM verify" --> GPT
     GPS -- "POST /update-location" --> API
-    API --> POSTGIS
+    API --> POSTGRES
 ```
 
 ---
@@ -125,19 +130,44 @@ flowchart TB
 
 ### Prerequisites
 
-- Docker & Docker Compose v2+
-- API keys: `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `PINECONE_API_KEY`
+- Python 3.12+ with `pip`
+- Node.js 18+ with `npm`
+- PostgreSQL 16 running locally
+- API keys: `GITHUB_MODELS_API_KEY` (GitHub PAT), `PINECONE_API_KEY`
 
 ### 1. Clone & Configure
 
 ```bash
 git clone https://github.com/emmanuelmj/civix.git
 cd civix
-cp .env.example .env
-# Add your API keys to .env
+cp backend/.env.example backend/.env
+# Add your API keys to backend/.env
 ```
 
-### 2. Launch
+### 2. Database Setup
+
+```bash
+psql -U postgres -c "CREATE DATABASE civix_pulse;"
+psql -U postgres -d civix_pulse -f backend/database/schema.sql
+```
+
+### 3. Launch All Services
+
+```bash
+# Terminal 1 — Backend
+cd backend && pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Command Center Dashboard
+cd command-center && npm install
+npx next dev --turbopack -p 3000
+
+# Terminal 3 — Field Worker App
+cd field-worker-app && npm install
+npx expo start --web --port 3001
+```
+
+### 4. Docker Compose (Alternative)
 
 ```bash
 docker compose up --build
@@ -148,15 +178,20 @@ docker compose up --build
 | Backend API | `http://localhost:8000` |
 | API Docs (Swagger) | `http://localhost:8000/docs` |
 | Command Center | `http://localhost:3000` |
-| n8n Workflows | `http://localhost:5678` |
-| PostgreSQL + PostGIS | `localhost:5432` |
+| Field Worker App | `http://localhost:3001` |
+| PostgreSQL | `localhost:5432` |
 
-### 3. Trigger a Test Event
+### 5. Trigger a Test Event
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/trigger-analysis \
   -H "Content-Type: application/json" \
-  -d '{"event_id": "test-001"}'
+  -d '{
+    "event_id": "test-001",
+    "translated_description": "Sewage overflow near Charminar for 3 days",
+    "domain": "WATER",
+    "coordinates": {"lat": 17.3616, "lng": 78.4747}
+  }'
 ```
 
 ---
@@ -201,13 +236,16 @@ curl -X POST http://localhost:8000/api/v1/trigger-analysis \
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Python 3.12 · FastAPI · LangChain · PostgreSQL + PostGIS |
-| Vector DB | Pinecone (semantic search, clustering) |
-| Frontend | Next.js 15 · Tailwind CSS · shadcn/ui · TypeScript |
-| Mobile | Expo (React Native) |
-| Ingestion | n8n (webhooks, WhatsApp, OCR) |
-| LLMs | Claude Sonnet (reasoning) · Gemini Flash (vision) · Bhashini (Hindi STT) |
-| Browser Automation | Browser-Use + Playwright |
+| Backend | Python 3.12 · FastAPI · LangGraph · asyncpg |
+| AI Agents | LangGraph 4-node pipeline (Auditor → Priority → Amplifier → Dispatch) |
+| LLMs | GPT-4.1 via GitHub Models API (scoring + verification) |
+| Embeddings | text-embedding-3-small (1024-dim, on-the-fly cluster search) |
+| Vector DB | Pinecone (semantic clustering, status-flag watcher) |
+| Database | PostgreSQL 16 (events, officers, dispatch logs, auto TTR) |
+| Frontend | Next.js 15 · Tailwind CSS · shadcn/ui · TypeScript · MapLibre GL |
+| Mobile | Expo (React Native) · Camera verification · GPS pings |
+| Ingestion | n8n (webhooks, WhatsApp, domain classification) |
+| Real-time | WebSocket (instant dashboard updates) |
 | Infrastructure | Docker Compose |
 
 ---
@@ -220,5 +258,5 @@ MIT — see [LICENSE](LICENSE).
 
 <p align="center">
   <strong>Civix-Pulse</strong> — From Complaint to Resolution, Autonomously.<br/>
-  Built for AI4Impact 2025 · PS 6 · Agentic Governance & Grievance Resolution Swarm
+  Built for AI4Impact 2026 · PS 6 · Agentic Governance & Grievance Resolution Swarm
 </p>
